@@ -1,0 +1,4 @@
+name = "MCTrajOpt"
+uuid = "f112471a-59cd-400c-b972-92ae6e3d4f8f"
+authors = ["Brian Jackson <bjack205@gmail.com>"]
+version = "0.1.0"
