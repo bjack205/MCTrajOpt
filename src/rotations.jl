@@ -5,11 +5,21 @@ function hat(ω)
 end
 
 function L(q)
-    [q[1] -q[2:4]'; q[2:4] q[1]*I + hat(q[SA[2,3,4]])]
+    SA[
+        q[1] -q[2] -q[3] -q[4]
+        q[2] q[1] -q[4] q[3]
+        q[3] q[4] q[1] -q[2]
+        q[4] -q[3] q[2] q[1]
+    ]
 end
 
 function R(q)
-    [q[1] -q[2:4]'; q[2:4] q[1]*I - hat(q[SA[2,3,4]])]
+    SA[
+        q[1] -q[2] -q[3] -q[4]
+        q[2] q[1] q[4] -q[3]
+        q[3] -q[4] q[1] q[2]
+        q[4] q[3] -q[2] q[1]
+    ]
 end
 
 const Hmat = SA[
@@ -48,6 +58,12 @@ function errstate_jacobian(x)
         0 0 0 G0[3] G0[7] G0[11]
         0 0 0 G0[4] G0[8] G0[12]
     ]
+end
+
+function err2fullstate(x)
+    ϕ = x[SA[4,5,6]]
+    q = SA[sqrt(1-ϕ'ϕ), ϕ[1], ϕ[2], ϕ[3]] 
+    SA[x[1], x[2], x[3], q[1], q[2], q[3], q[4]]
 end
 
 function kinematics(x,ν)

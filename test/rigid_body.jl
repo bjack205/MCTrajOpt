@@ -18,7 +18,6 @@ ẋ0 = kinematics(x0,ν0)
 @test ForwardDiff.jacobian(x->inv_kinematics(x,ẋ0), x0) ≈ D1Kinv(x0,ẋ0)
 @test ForwardDiff.jacobian(xdot->inv_kinematics(x0,xdot), ẋ0) ≈ D2Kinv(x0,ẋ0)
 
-
 # Test the Lagrangian derivatives
 body = RigidBody(1.0, Diagonal([0.1, 1, 1]))
 params = SimParams(5.0, 0.05) 
@@ -35,7 +34,6 @@ x2 = [@SVector randn(3); normalize(@SVector randn(4))]
 @test D2Ld(body,x1,x2,params.h) ≈ ForwardDiff.gradient(x->Ld(body,x1,x,params.h), x2)
 
 # Test simulation
-
 F = [SA[0,0,0.5*(0.1<t<0.5), 0,0,1.0* (0.1<t<.5)] for t in params.thist]  # force in the world frame, torque in body frame?
 x0 = SA[0,0,0, sqrt(2)/2, sqrt(2)/2, 0,0]
 X = [zero(x0) for k = 1:params.N]
@@ -59,7 +57,7 @@ plot(params.thist[1:end-1], Vhist[:,4:6])
 using MeshCat, GeometryBasics, CoordinateTransformations, Rotations, Colors
 vis = Visualizer()
 dim = Vec(0.5, 0.7, 0.3)
-geom  = Rect3(-dim/2, dim)
+geom  = Rect3D(-dim/2, dim)
 setobject!(vis["body"], geom, MeshPhongMaterial(color=colorant"green"))
 open(vis)
 
