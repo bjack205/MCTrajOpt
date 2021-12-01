@@ -82,7 +82,19 @@ end
 #############################################
 
 function DEL(body, x1, x2, x3, F1, F2, h)
-    errstate_jacobian(body, x2)'*(D2Ld(body,x1,x2,h) + D1Ld(body,x2,x3,h)) + h * (F1+F2)/2
+    # scaling = Diagonal(SA[1,1,1,0.5,0.5,0.5])
+    # scaling * errstate_jacobian(body, x2)'*(D2Ld(body,x1,x2,h) + D1Ld(body,x2,x3,h)) + h * (F1+F2)/2
+    mass = body.mass
+    J = body.J
+    ri = SA[1,2,3]
+    qi = SA[4,5,6,7]
+    r1,q1 = x1[ri], x1[qi]
+    r2,q2 = x2[ri], x2[qi]
+    r3,q3 = x3[ri], x3[qi]
+    G2 = L(q2)*Hmat
+    DELr = mass*(r2-r1)/h - mass*(r3-r2)*h
+    DELq = (2/h) * G2'L(q1)*Hmat*J * Hmat'L(q1)'q2 + (2/h) * G2'Tmat*R(q3)'Hmat*J*Hmat'L(q2)'q3
+    [DELr; DELq] + h*(F1+F2)/2
 end
 
 function D3_DEL(body, x1,x2,x3, F1,F2, h)

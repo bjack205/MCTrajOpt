@@ -14,9 +14,12 @@ export mass_matrix,
        simulate
 
 export TwoBody, RevoluteJoint
+export packZ!
 
 include("rotations.jl")
 include("rigid_body.jl")
 include("two_body.jl")
+include("rigid_body_ipopt.jl")
+include("point_mass_ipopt.jl")
 
 end # module

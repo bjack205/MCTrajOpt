@@ -102,3 +102,6 @@ for k = 1:params.N
     end
 end
 setanimation!(vis, anim)
+
+
+##

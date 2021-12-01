@@ -4,7 +4,6 @@ using StaticArrays
 using LinearAlgebra
 using Test
 using Random
-using BenchmarkTools
 
 struct RevoluteJoint
     p1::SVector{3,Float64}
