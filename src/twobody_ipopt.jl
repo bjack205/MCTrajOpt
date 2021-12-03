@@ -46,7 +46,10 @@ function TwoBodyMOI(b1::RigidBody, b2::RigidBody, joint::RevoluteJoint, params::
     qf = [xf[qi] for qi in qinds[1,:]]
 
     n_nlp = sum(length.(xinds)) + sum(length.(uinds)) + sum(length.(λinds))
-    m_nlp = (N-2)*6*L + (N-1)*p
+    p_del = (N-2)*6*L
+    p_joints = (N-1)*p
+    p_quatnorm = N
+    m_nlp = p_del + p_joints + p_quatnorm 
     TwoBodyMOI(model, params, Qr, Qq, R, r0, q0, rf, qf, 
         n_nlp, m_nlp, N, L, rinds, qinds, xinds, uinds, λinds
     )
@@ -90,6 +93,8 @@ function MOI.eval_constraint(prob::TwoBodyMOI, c, x)
     qi1 = 4:6 
     ri2 = ri1 .+ 6
     qi2 = qi1 .+ 6
+
+    # DEL constraint
     for (i,k) in enumerate(2:prob.N-1)
         r1_1, r1_2 = x[rinds[k-1,1]], x[rinds[k-1,2]]
         q1_1, q1_2 = x[qinds[k-1,1]], x[qinds[k-1,2]]
@@ -122,6 +127,7 @@ function MOI.eval_constraint(prob::TwoBodyMOI, c, x)
         qi2 = qi2 .+ 12
     end
 
+    # Joint constraints
     ji = 6*prob.L*(prob.N-2) .+ (1:5)
     for (i,k) in enumerate(2:prob.N)
         x2 = x[prob.xinds[k]]
@@ -129,6 +135,14 @@ function MOI.eval_constraint(prob::TwoBodyMOI, c, x)
         ji = ji .+ 5
         # i > 2 && break
     end
+
+    # Quaternion norm constraints
+    ni = 6*prob.L*(prob.N-2) + 5*(prob.N-1)
+    for (i,k) in enumerate(1:prob.N)
+        qk = x[qinds[k]]
+        c[ni+i] = 1 - qk'qk
+    end
+
     return
 end
 
@@ -207,11 +221,19 @@ function MOI.eval_constraint_jacobian(prob::TwoBodyMOI, jac, x)
         qi2 = qi2 .+ 12
     end
 
+    # Joint constraints
     ji = 6*prob.L*(prob.N-2) .+ (1:5)
     for (i,k) in enumerate(2:prob.N)
         x2 = x[prob.xinds[k]]
         J0[ji, prob.xinds[k]] .= ∇joint_constraints(prob, x2) 
         ji = ji .+ 5
+    end
+
+    # Quaternion norm constraints
+    ni = 6*prob.L*(prob.N-2) + 5*(prob.N-1)
+    for (i,k) in enumerate(1:prob.N)
+        qk = x[qinds[k]]
+        J0[ni+i, qinds[k]] = -2qk
     end
 end
 
