@@ -97,6 +97,46 @@ function DEL(body, x1, x2, x3, F1, F2, h)
     [DELr; DELq] + h*(F1+F2)/2
 end
 
+function DEL_trans(body, r1, r2, r3, F1, F2, h)
+    mass = body.mass
+    mass / h * (r2-r1) - mass/h * (r3-r2) + h * (F1 + F2) / 2
+end
+
+function ∇DEL_trans(body, r1, r2, r3, F1, F2, h)
+    mass = body.mass
+    I3 = SA[1 0 0; 0 1 0; 0 0 1]
+    dr1 = -mass/h * I3
+    dr2 = 2mass/h * I3
+    dr3 = -mass/h * I3
+    dF1 = h/2 * I3
+    dF2 = h/2 * I3
+    return dr1, dr2, dr3, dF1, dF2
+end
+
+function DEL_rot(body, q1, q2, q3, T1, T2, h)
+    J = body.J
+    G2 = L(q2)*Hmat
+    (2/h) * G2'L(q1)*Hmat * J * Hmat'L(q1)'q2 + 
+        (2/h) * G2'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3 + 
+        h * (T1 + T2) / 2
+end
+
+function ∇DEL_rot(body, q1, q2, q3, T1, T2, h)
+    J = body.J
+    G2 = L(q2)*Hmat
+    I3 = SA[1 0 0; 0 1 0; 0 0 1]
+    dq1 = (2/h * G2'R(Hmat * J * Hmat'L(q1)'q2) + 2/h * G2'L(q1)*Hmat * J * Hmat'R(q2)*Tmat)
+    
+    dq2 = (2/h) * G2'*(L(q1)*Hmat*J*Hmat'L(q1)' + Tmat*R(q3)'Hmat*J*Hmat'R(q3)*Tmat)
+    b = (2/h) * (L(q1)*Hmat * J * Hmat'L(q1)'q2 + Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3)
+    # dq2 += ∇G(q2, b)  # use this line for the correct derivative
+    dq2 += Hmat'R(b)*Tmat  # use this line to check with ForwardDiff
+    dq3 = (2/h * G2'Tmat*L(Hmat * J * Hmat'L(q2)'q3)*Tmat + 2/h * G2'Tmat*R(q3)'Hmat * J * Hmat'L(q2)')
+    dT1 = h/2 * I3
+    dT2 = h/2 * I3
+    return dq1, dq2, dq3, dT1, dT2
+end
+
 function D3_DEL(body, x1,x2,x3, F1,F2, h)
     ForwardDiff.jacobian(x->DEL(body,x1,x2,x,F1,F2,h), x3) * errstate_jacobian(body, x3)
 end

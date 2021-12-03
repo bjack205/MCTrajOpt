@@ -111,16 +111,17 @@ using MathOptInterface
 using Quaternions
 const MOI = MathOptInterface 
 
+##
 body = RigidBody(1.0, Diagonal([0.1, 1, 1]))
 sim = SimParams(5.0, 0.05) 
-sim = SimParams(1.0, 0.25)
+sim = SimParams(2.0, 0.1)
 
-Qcost = Diagonal(SA_F64[1,1,1])
-Rcost = Diagonal(@SVector fill(0.1, 6))
+Qcost = Diagonal(SA_F64[10,10,10])
+Rcost = Diagonal(SA_F64[.1,.1,.1, 1,1,1]) * 100
 
 x0 = SA[0,0,0, 1,0,0,0.]
 x1 = copy(x0)
-xf = SA[1,2,3, 0,1,0,0.]  # rotate 180 about x
+xf = SA[1,2,3, sqrt(2)/2,sqrt(2)/2,0,0.]  # rotate 180 about x
 
 # Create the NLP problem
 prob = MCTrajOpt.ProblemMOI(body, sim, Qcost, Rcost, x0, x1, xf)
@@ -151,6 +152,8 @@ packZ!(prob, zsim, Xsim, Usim)
 # Solve
 zsol, = MCTrajOpt.ipopt_solve(prob, z0, max_iter=1_000)
 Xsol = [zsol[xi] for xi in prob.xinds]
+Usol = [zsol[ui] for ui in prob.uinds]
+Xsol[end]
 
 anim = MeshCat.Animation(floor(Int,1/sim.h))
 for k = 1:sim.N
@@ -161,7 +164,8 @@ for k = 1:sim.N
     end
 end
 setanimation!(vis, anim)
-# Test the functions
+
+## Test the functions
 MOI.eval_objective(prob, z0) < MOI.eval_objective(prob, zsim)
 
 grad_f = zeros(prob.n_nlp)

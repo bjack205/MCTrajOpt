@@ -26,12 +26,12 @@ struct ProblemMOI <: MOI.AbstractNLPEvaluator
     params::SimParams
     Q::Diagonal{Float64, SVector{3, Float64}}
     R::Diagonal{Float64, SVector{6, Float64}}
-    r0::SVector{3,Int}  # initial position
-    q0::SVector{4,Int}  # initial orientation
-    r1::SVector{3,Int}  # next initial position
-    q1::SVector{4,Int}  # next initial orientation
-    rf::SVector{3,Int}  # goal position
-    qf::SVector{4,Int}  # goal orientation
+    r0::SVector{3,Float64}  # initial position
+    q0::SVector{4,Float64}  # initial orientation
+    r1::SVector{3,Float64}  # next initial position
+    q1::SVector{4,Float64}  # next initial orientation
+    rf::SVector{3,Float64}  # goal position
+    qf::SVector{4,Float64}  # goal orientation
 
     # Internal data
     n_nlp::Int  # number of primals
@@ -104,44 +104,47 @@ end
 
 function MOI.eval_objective(prob::ProblemMOI, x)
     J = 0.0
-    rf = prob.rf
-    qf = prob.qf
+    # rf = prob.rf
+    # qf = prob.qf
+    # Q,R = prob.Q, prob.R
+    # r1 = x[1:3] - rf
+    # q1 = x[4:7] - qf
+    # u1 = x[8:13]
+    # r2 = x[14:16] - rf
+    # q2 = x[17:20] - qf
+    # u2 = x[21:26]
+    # r3 = x[27:29] - rf
+    # q3 = x[30:33] - qf
+    # u3 = x[34:39]
+    # r4 = x[40:42] - rf
+    # q4 = x[43:46] - qf
+    # u4 = x[47:52]
+    # r5 = x[53:55] - rf
+    # q5 = x[56:59] - qf
+
+    # J += 0.5*(r1'Q*r1 + q1'q1 + u1'R*u1)
+    # J += 0.5*(r2'Q*r2 + q2'q2 + u2'R*u2)
+    # J += 0.5*(r3'Q*r3 + q3'q3 + u3'R*u3)
+    # J += 0.5*(r4'Q*r4 + q4'q4 + u4'R*u4)
+    # J += 0.5*(r5'Q*r5 + q5'q5) * 100
+    # return J
+
     Q,R = prob.Q, prob.R
-    # rinds, qinds, uinds = prob.rinds, prob.qinds, prob.uinds
-    r1 = x[1:3] - rf
-    q1 = x[4:7] - qf
-    u1 = x[8:13]
-    r2 = x[14:16] - rf
-    q2 = x[17:20] - qf
-    u2 = x[21:26]
-    r3 = x[27:29] - rf
-    q3 = x[30:33] - qf
-    u3 = x[34:39]
-    r4 = x[40:42] - rf
-    q4 = x[43:46] - qf
-    u4 = x[47:52]
-    r5 = x[53:55] - rf
-    q5 = x[56:59] - qf
-
-    J += 0.5*(r1'Q*r1 + q1'q1 + u1'R*u1)
-    J += 0.5*(r2'Q*r2 + q2'q2 + u2'R*u2)
-    J += 0.5*(r3'Q*r3 + q3'q3 + u3'R*u3)
-    J += 0.5*(r4'Q*r4 + q4'q4 + u4'R*u4)
-    J += 0.5*(r5'Q*r5 + q5'q5) * 100
-    return J
-
-
-    # for k = 1:prob.N
-    #     r = x[rinds[k]]
-    #     q = x[qinds[k]]
-    #     dr = r - prob.rf
-    #     dq = prob.qf'q
-    #     J += 0.5 * dr'prob.Q*dr + min(1+dq, 1-dq)
-    #     if k < prob.N
-    #         u = x[uinds[k]]
-    #         J += 0.5 * u'prob.R*u
-    #     end
-    # end
+    rinds, qinds, uinds = prob.rinds, prob.qinds, prob.uinds
+    for k = 1:prob.N
+        r = x[rinds[k]]
+        q = x[qinds[k]]
+        dr = r - prob.rf
+        dq = q - prob.qf
+        if k < prob.N
+            u = x[uinds[k]]
+            J += 0.5 * u'R*u
+            s = 1.0
+        else
+            s = 10.0
+        end
+        J += 0.5 * (dr'Q*dr + dq'dq) * s
+    end
     return J
 end
 
@@ -155,46 +158,106 @@ function MOI.eval_constraint(prob::ProblemMOI, c, x)
     h = prob.params.h
     J = prob.body.J
     mass = prob.body.mass
-    r1 = x[1:3]; q1 = x[4:7]
-    F1 = x[8:10]; T1 = x[11:13]
-    r2 = x[14:16]; q2 = x[17:20]
-    F2 = x[21:23]; T2 = x[24:26]
-    r3 = x[27:29]; q3 = x[30:33]
-    F3 = x[34:36]; T3 = x[37:39]
-    r4 = x[40:42]; q4 = x[43:46]
-    F4 = x[47:49]; T4 = x[50:52]
-    r5 = x[53:55]; q5 = x[56:59]
+    # r1 = x[1:3]; q1 = x[4:7]
+    # F1 = x[8:10]; T1 = x[11:13]
+    # r2 = x[14:16]; q2 = x[17:20]
+    # F2 = x[21:23]; T2 = x[24:26]
+    # r3 = x[27:29]; q3 = x[30:33]
+    # F3 = x[34:36]; T3 = x[37:39]
+    # r4 = x[40:42]; q4 = x[43:46]
+    # F4 = x[47:49]; T4 = x[50:52]
+    # r5 = x[53:55]; q5 = x[56:59]
 
-    G2 = L(q2)'Hmat
-    G3 = L(q3)'Hmat
-    G4 = L(q4)'Hmat
+    # G2 = L(q2)'Hmat
+    # G3 = L(q3)'Hmat
+    # G4 = L(q4)'Hmat
 
-    c[1:3]   = mass / h * (r2-r1) - mass/h * (r3-r2) + h * (F1 + F2) / 2
-    c[4:6]   = (2/h) * G2'L(q1)*Hmat * J * Hmat'L(q1)'q2 + (2/h) * G2'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
-    c[7:9]   = mass / h * (r3-r2) - mass/h * (r4-r3) + h * (F2 + F3) / 2
-    c[10:12] = (2/h) * G3'L(q2)*Hmat * J * Hmat'L(q2)'q3 + (2/h) * G3'Tmat*R(q4)'Hmat * J * Hmat'L(q3)'q4
-    c[13:15] = mass / h * (r4-r3) - mass/h * (r5-r4) + h * (F3 + F4) / 2
-    c[16:18] = (2/h) * G4'L(q3)*Hmat * J * Hmat'L(q3)'q4 + (2/h) * G4'Tmat*R(q5)'Hmat * J * Hmat'L(q4)'q5
+    # c[1:3]   = mass / h * (r2-r1) - mass/h * (r3-r2) + h * (F1 + F2) / 2
+    # c[4:6]   = (2/h) * G2'L(q1)*Hmat * J * Hmat'L(q1)'q2 + (2/h) * G2'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
+    # c[7:9]   = mass / h * (r3-r2) - mass/h * (r4-r3) + h * (F2 + F3) / 2
+    # c[10:12] = (2/h) * G3'L(q2)*Hmat * J * Hmat'L(q2)'q3 + (2/h) * G3'Tmat*R(q4)'Hmat * J * Hmat'L(q3)'q4
+    # c[13:15] = mass / h * (r4-r3) - mass/h * (r5-r4) + h * (F3 + F4) / 2
+    # c[16:18] = (2/h) * G4'L(q3)*Hmat * J * Hmat'L(q3)'q4 + (2/h) * G4'Tmat*R(q5)'Hmat * J * Hmat'L(q4)'q5
 
-    # xinds, uinds = prob.xinds, prob.uinds
-    # cinds = prob.cinds
-    # h = prob.params.h
-    # for (i,k) in enumerate(2:prob.N-1)
-    #     x1 = x[xinds[k-1]]
-    #     u1 = x[uinds[k-1]]
-    #     x2 = x[xinds[k]]
-    #     u2 = x[uinds[k]]
-    #     x3 = x[xinds[k+1]]
+    rinds, qinds = prob.rinds, prob.qinds
+    xinds, uinds = prob.xinds, prob.uinds
+    cinds = prob.cinds
+    h = prob.params.h
+    inds1 = 1:3
+    inds2 = 4:6
+    for (i,k) in enumerate(2:prob.N-1)
+        r1 = x[rinds[k-1]]
+        q1 = x[qinds[k-1]]
+        u1 = x[uinds[k-1]]
+        r2 = x[rinds[k]]
+        q2 = x[qinds[k]]
+        u2 = x[uinds[k]]
+        r3 = x[rinds[k+1]]
+        q3 = x[qinds[k+1]]
+        F1,T1 = u1[SA[1,2,3]], u1[SA[4,5,6]]
+        F2,T2 = u2[SA[1,2,3]], u2[SA[4,5,6]]
 
-    #     # Enforce the Discrete Euler-Lagrange equation to satisfy the dynamics
-    #     c[cinds[i]] = DEL(prob.body, x1, x2, x3, u1, u2, h)
-    # end
+        G2 = L(q2)'Hmat
+
+        # Enforce the Discrete Euler-Lagrange equation to satisfy the dynamics
+        # c[inds1] = mass / h * (r2-r1) - mass/h * (r3-r2) + h * (F1 + F2) / 2
+        # c[inds2] = (2/h) * G2'L(q1)*Hmat * J * Hmat'L(q1)'q2 + (2/h) * G2'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3 + h * (T1 + T2) / 2
+        c[inds1] = DEL_trans(prob.body, r1, r2, r3, F1, F2, h)
+        c[inds2] = DEL_rot(prob.body, q1, q2, q3, T1, T2, h)
+        # x1 = [r1; q1]
+        # x2 = [r2; q2]
+        # x3 = [r3; q3]
+        # c[cinds[i]] = DEL(prob.body, x1, x2, x3, u1, u2, h)
+
+        inds1 = inds1 .+ 6
+        inds2 = inds2 .+ 6
+    end
 end
 
 function MOI.eval_constraint_jacobian(prob::ProblemMOI, jac, x)
-    J = reshape(jac, prob.m_nlp, prob.n_nlp)
-    c = zeros(eltype(x), prob.m_nlp)
-    ForwardDiff.jacobian!(J, (c,z)->MOI.eval_constraint(prob, c, z), c, x)
+    J0 = reshape(jac, prob.m_nlp, prob.n_nlp)
+    h = prob.params.h
+    # c = zeros(eltype(x), prob.m_nlp)
+    # ForwardDiff.jacobian!(J0, (c,z)->MOI.eval_constraint(prob, c, z), c, x)
+    # return
+
+    # J = zero(J0)
+    jac .= 0
+    J = J0
+    rinds, qinds = prob.rinds, prob.qinds
+    xinds, uinds = prob.xinds, prob.uinds
+    cinds = prob.cinds
+    for (i,k) in enumerate(2:prob.N-1)
+        r1 = x[rinds[k-1]]
+        q1 = x[qinds[k-1]]
+        u1 = x[uinds[k-1]]
+        r2 = x[rinds[k]]
+        q2 = x[qinds[k]]
+        u2 = x[uinds[k]]
+        r3 = x[rinds[k+1]]
+        q3 = x[qinds[k+1]]
+        F1,T1 = u1[SA[1,2,3]], u1[SA[4,5,6]]
+        F2,T2 = u2[SA[1,2,3]], u2[SA[4,5,6]]
+        F1i = uinds[k-1][SA[1,2,3]]
+        T1i = uinds[k-1][SA[4,5,6]]
+        F2i = uinds[k][SA[1,2,3]]
+        T2i = uinds[k][SA[4,5,6]]
+
+        c1 = cinds[i][SA[1,2,3]]
+        c2 = cinds[i][SA[4,5,6]]
+        J[c1, rinds[k-1]] .= ForwardDiff.jacobian(r->DEL_trans(prob.body, r,r2,r3,F1,F2,h), r1)
+        J[c1, rinds[k]]   .= ForwardDiff.jacobian(r->DEL_trans(prob.body, r1,r,r3,F1,F2,h), r2)
+        J[c1, rinds[k+1]] .= ForwardDiff.jacobian(r->DEL_trans(prob.body, r1,r2,r,F1,F2,h), r3)
+        J[c1, F1i] .= ForwardDiff.jacobian(F->DEL_trans(prob.body, r1,r2,r3,F,F2,h), F1)
+        J[c1, F2i] .= ForwardDiff.jacobian(F->DEL_trans(prob.body, r1,r2,r3,F1,F,h), F2)
+
+        J[c2, qinds[k-1]] .= ForwardDiff.jacobian(q->DEL_rot(prob.body, q,q2,q3,T1,T2,h), q1)
+        J[c2, qinds[k]]   .= ForwardDiff.jacobian(q->DEL_rot(prob.body, q1,q,q3,T1,T2,h), q2)
+        J[c2, qinds[k+1]] .= ForwardDiff.jacobian(q->DEL_rot(prob.body, q1,q2,q,T1,T2,h), q3)
+        J[c2, T1i] .= ForwardDiff.jacobian(T->DEL_rot(prob.body, q1,q2,q3,T,T2,h), T1)
+        J[c2, T2i] .= ForwardDiff.jacobian(T->DEL_rot(prob.body, q1,q2,q3,T1,T,h), T2)
+    end
+
     return 
 
     xinds, uinds = prob.xinds, prob.uinds

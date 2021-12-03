@@ -82,6 +82,14 @@ function errstate_jacobian(model::TwoBody, x)
     blockdiag(G1, G2)
 end
 
+function ∇errstate_jacobian(model::TwoBody, x, b)
+    x1,x2 = splitstate(model, x)
+    b1,b2 = splitstate(model, b)
+    G1 = ∇errstate_jacobian(x1, b1)
+    G2 = ∇errstate_jacobian(x2, b2)
+    blockdiag(G1, G2)
+end
+
 function kinematics(model::TwoBody,x,ν)
     x1,x2 = splitstate(model, x)
     ν1,ν2 = splitvel(model, ν)

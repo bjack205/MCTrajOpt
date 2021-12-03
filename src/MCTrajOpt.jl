@@ -21,5 +21,6 @@ include("rigid_body.jl")
 include("two_body.jl")
 include("rigid_body_ipopt.jl")
 include("point_mass_ipopt.jl")
+include("twobody_ipopt.jl")
 
 end # module

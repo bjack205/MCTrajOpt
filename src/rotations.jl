@@ -34,6 +34,15 @@ function G(q)
     return L(q)*Hmat
 end
 
+"""
+Jacobian of `G(q)'b` wrt quaternion `q`, and `b` has length 4.
+"""
+function ∇G(q, b)
+    # I3 = SA[1 0 0; 0 1 0; 0 0 1]
+    # return -I3 * (q'b)
+    Hmat'R(b)*Tmat
+end
+
 function compose_states(x1,x2)
     qi = SA[4,5,6,7]
     r3 = SA[x1[1] + x2[1], x1[2] + x2[2], x1[3] + x2[3]]
@@ -57,6 +66,24 @@ function errstate_jacobian(x)
         0 0 0 G0[2] G0[6] G0[10]
         0 0 0 G0[3] G0[7] G0[11]
         0 0 0 G0[4] G0[8] G0[12]
+    ]
+end
+
+"""
+Jacobian of `errstate_jacobian(x)'b` for `b` of length 7. Size is 6×7
+"""
+function ∇errstate_jacobian(x, b)
+    qi = SA[4,5,6,7]
+    q = x[qi]
+    bq = b[qi]
+    G = ∇G(q, bq)
+    SA[
+        0 0 0 0 0 0 0
+        0 0 0 0 0 0 0
+        0 0 0 0 0 0 0
+        0 0 0 G[1] G[4] G[7] G[10]
+        0 0 0 G[2] G[5] G[8] G[11]
+        0 0 0 G[3] G[6] G[9] G[12]
     ]
 end
 
@@ -139,3 +166,33 @@ function D2Kinv(x,xdot)
         0 0 0 J[3] J[6] J[9] J[12]
     ]
 end
+
+function Amat(q)
+    w,x,y,z = q[1],q[2],q[3],q[4]
+    ww, xx, yy, zz = w*w, x*x, y*y, z*z
+    xy = (x * y)
+    zw = (w * z)
+    xz = (x * z)
+    yw = (y * w)
+    yz = (y * z)
+    xw = (w * x)
+    SA[
+        ww + xx - yy - zz  2(xy - zw)         2(xz + yw)
+        2(xy + zw)         ww - xx + yy - zz  2(yz - xw)
+        2(xz - yw)         2(yz + xw)         ww - xx - yy + zz
+    ]
+end
+
+function ∇rot(q, r)
+    rhat = SA[0, r[1], r[2], r[3]]
+    2*Hmat'R(q)'R(rhat)
+end
+
+"""
+Jacobian of `∇rot(q, r,)'b` wrt `q` (note the transpose)
+"""
+function ∇²rot(q, r, b)
+    rhat = SA[0, r[1], r[2], r[3]]
+    2*R(rhat)'L(Hmat*b)
+end
+
