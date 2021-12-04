@@ -143,74 +143,64 @@ Q2_0 = [1.0; 0; 0; 0]
 q_0 = [r1_0; Q1_0; r2_0; Q2_0]
 
 #Torque input at joint
-uhist = .5*[0; 0; ones(19); -ones(40); zeros(10); ones(40); -ones(10)];
+uhist = 0.5*[0; 0; ones(19); -ones(40); zeros(10); ones(40); -ones(10)];
 
 #Corresponding F
 Fhist = zeros(12,N)
 for k = 1:N
-    Fhist[:,k] = [0; 0; 0; 0; 0; -uhist[k]; 0; 0; 0; 0; 0; uhist[k]]
+    Fhist[:,k] = [0;0;0; 0;0;-uhist[k]; 0;0;0; 0;0;uhist[k]]
 end
 F = [SVector{12}(F) for F in eachcol(Fhist)] 
 
 ## Simulate
 
-function dp_simulate(model::DoublePendulum, params::SimParams, F, x0; newton_iters=20, tol=1e-12)
+function dp_simulate(model::DoublePendulum, params::SimParams, Fhist, q_0; newton_iters=20, tol=1e-12)
     N = params.N
     h = params.h
 
+    #Simulate
     qhist = zeros(14,N)
     qhist[:,1] .= q_0
     qhist[:,2] .= q_0
-    X = [zero(x0) for k = 1:N]
-    X[1] .= x0
-    X[2] .= x0
     p = 10
 
     for k = 2:(N-1)
         
         #Initial guess
-        X[k+1] .= X[k]
-        λ = @SVector zeros(p)
+        qhist[:,k+1] .= qhist[:,k]
+        λ = zeros(p)
         
-        e = [
-            # DEL(qhist[:,k-1],qhist[:,k],qhist[:,k+1],λ,Fhist[:,k-1],Fhist[:,k]); 
-            MC.DEL(model, X[k-1],X[k],X[k+1],λ,F[k-1],F[k],h); 
-            MC.joint_constraints(model, X[k+1])# c(qhist[:,k+1])
-        ]
+        e = [DEL(qhist[:,k-1],qhist[:,k],qhist[:,k+1],λ,Fhist[:,k-1],Fhist[:,k]); c(qhist[:,k+1])]
         
-        while maximum(abs.(e)) > 1e-12
-            D = Dq3DEL(X[k-1],X[k],X[k+1],λ,F[k-1],F[k])
-            C2 = MC.∇joint_constraints(model, X[k]) * MC.errstate_jacobian(model, X[k])
-            C3 = MC.∇joint_constraints(model, X[k+1]) * MC.errstate_jacobian(model, X[k+1])
-            # C2 = Dc(qhist[:,k])
-            # C3 = Dc(qhist[:,k+1])
+        while maximum(abs.(e)) > tol 
+            D = Dq3DEL(qhist[:,k-1],qhist[:,k],qhist[:,k+1],λ,Fhist[:,k-1],Fhist[:,k])
+            C2 = Dc(qhist[:,k])
+            C3 = Dc(qhist[:,k+1])
             
             Δ = -[D h*C2'; C3 zeros(p,p)]\e
             
-            Δx = MC.err2fullstate(model, Δ[1:12])
-            X[k+1] = MC.compose_states(model, X[k+1], Δx)
-            # qhist[1:3,k+1] .= qhist[1:3,k+1] + Δ[1:3]
-            # qhist[4:7,k+1] .= L(qhist[4:7,k+1])*[sqrt(1-Δ[4:6]'*Δ[4:6]); Δ[4:6]]
-            # qhist[8:10,k+1] .= qhist[8:10,k+1] + Δ[7:9]
-            # qhist[11:14,k+1] .= L(qhist[11:14,k+1])*[sqrt(1-Δ[10:12]'*Δ[10:12]); Δ[10:12]]
+            qhist[1:3,k+1] .= qhist[1:3,k+1] + Δ[1:3]
+            qhist[4:7,k+1] .= L(qhist[4:7,k+1])*[sqrt(1-Δ[4:6]'*Δ[4:6]); Δ[4:6]]
+            qhist[8:10,k+1] .= qhist[8:10,k+1] + Δ[7:9]
+            qhist[11:14,k+1] .= L(qhist[11:14,k+1])*[sqrt(1-Δ[10:12]'*Δ[10:12]); Δ[10:12]]
             
-            λ = λ + Δ[12 .+ (1:p)]
+            λ .= λ + Δ[12 .+ (1:p)]
             
-            e = [DEL(X[k-1],X[k],X[k+1],λ,F[k-1],F[k]); c(X[k+1])]
+            e = [DEL(qhist[:,k-1],qhist[:,k],qhist[:,k+1],λ,Fhist[:,k-1],Fhist[:,k]); c(qhist[:,k+1])]
         end
         
     end
-    return X
+    return qhist
 end
 
-Xsim = dp_simulate(model, sim, F, q_0)
+qhist = dp_simulate(model, sim, Fhist, q_0)
 Xsim2 = MC.simulate(model, sim, F, q_0)
 
 # Visualization
 # Xsim0 = [SVector{14}(x) for x in eachcol(qhist)]
-# Xsim = [SVector{14}(x) for x in eachcol(qhist)]
+Xsim = [SVector{14}(x) for x in eachcol(qhist)]
 x0 = q_0
 # vis = launchvis(model, x0)
-visualize!(vis, model, Xsim2, sim)
+visualize!(vis, model, Xsim, sim)
 println(norm(Xsim - Xsim2,Inf))
 # Xsim - Xsim0
