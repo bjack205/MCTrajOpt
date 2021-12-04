@@ -25,7 +25,8 @@ J2 = Diagonal([0.1; 1.0; 1.0])
 ℓ2 = 1.0
 body1 = RigidBody(m1, J1)
 body2 = RigidBody(m2, J2)
-model = DoublePendulum(body1, body2)
+model = DoublePendulum(body1, body2, gravity=true)
+const GRAVITY = 9.81
 
 M̄ = [m1*I(3) zeros(3,9);
      zeros(3,3) J1 zeros(3,6);
@@ -72,6 +73,7 @@ function Ḡ(q)
 end
 
 function DEL(q_1,q_2,q_3,λ,F1,F2)
+    g = GRAVITY
     
     r1_1 = q_1[1:3]
     Q1_1 = q_1[4:7]
@@ -88,9 +90,9 @@ function DEL(q_1,q_2,q_3,λ,F1,F2)
     r2_3 = q_3[8:10]
     Q2_3 = q_3[11:14]
     
-    [(1/h)*m1*(r1_2-r1_1) - (1/h)*m1*(r1_3-r1_2);
+    [(1/h)*m1*(r1_2-r1_1) - (1/h)*m1*(r1_3-r1_2) - m1*g*h*[1;0;0];
     (2.0/h)*G(Q1_2)'*L(Q1_1)*H*J1*H'*L(Q1_1)'*Q1_2 + (2.0/h)*G(Q1_2)'*T*R(Q1_3)'*H*J1*H'*L(Q1_2)'*Q1_3;
-    (1/h)*m2*(r2_2-r2_1) - (1/h)*m2*(r2_3-r2_2);
+    (1/h)*m2*(r2_2-r2_1) - (1/h)*m2*(r2_3-r2_2) - m2*g*h*[1;0;0];
     (2.0/h)*G(Q2_2)'*L(Q2_1)*H*J2*H'*L(Q2_1)'*Q2_2 + (2.0/h)*G(Q2_2)'*T*R(Q2_3)'*H*J2*H'*L(Q2_2)'*Q2_3] + (h/2.0)*F1 + (h/2.0)*F2 + h*Dc(q_2)'*λ
 end
 

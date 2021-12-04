@@ -115,9 +115,9 @@ function D1Ld(model::DoublePendulum, x1, x2, h)
     q2_1, q2_2 = getquat(model, x2)
     g = model.gravity
     [
-        -m_1/h * (r2_1-r1_1) - m_1*g*SA[0,0,1]/2
+        -m_1/h * (r2_1-r1_1) - h*m_1*g*SA[1,0,0]/2
         2/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1
-        -m_2/h * (r2_2-r1_2) - m_2*g*SA[0,0,1]/2
+        -m_2/h * (r2_2-r1_2) - h*m_2*g*SA[1,0,0]/2
         2/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'q2_2
     ]
 end
@@ -170,9 +170,9 @@ function D2Ld(model::DoublePendulum, x1, x2, h)
     q2_1, q2_2 = getquat(model, x2)
     g = model.gravity
     [
-        m_1/h * (r2_1-r1_1) - m_1*g*SA[0,0,1]/2
+        m_1/h * (r2_1-r1_1) - h*m_1*g*SA[1,0,0]/2
         2/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1
-        m_2/h * (r2_2-r1_2) - m_2*g*SA[0,0,1]/2
+        m_2/h * (r2_2-r1_2) - h*m_2*g*SA[1,0,0]/2
         2/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'q2_2
     ]
 end
@@ -321,7 +321,7 @@ function simulate(model::DoublePendulum, params::SimParams, F, x0; newton_iters=
             e2 = joint_constraints(model, X[k+1])
             e = [e1; e2]
             if norm(e, Inf) < tol
-                println("Converged in $i iters at time $(params.thist[k])")
+                # println("Converged in $i iters at time $(params.thist[k])")
                 break
             end
             # D = ∇DEL3(model, X[k-1], X[k], X[k+1], λ, F[k-1],F[k], h)
