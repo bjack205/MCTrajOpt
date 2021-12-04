@@ -29,12 +29,21 @@ struct RevoluteJoint
     end
 end
 
-struct TwoBody
+abstract type TwoBody end
+struct SpaceBar <: TwoBody 
     b1::RigidBody
     b2::RigidBody
     joint::RevoluteJoint
 end
 state_dim(::TwoBody) = 14
+
+function randstate(model::TwoBody)
+    r_1 = @SVector randn(3)
+    r_2 = @SVector randn(3)
+    q_1 = normalize(@SVector randn(4))
+    q_2 = normalize(@SVector randn(4))
+    return [r_1; q_1; r_2; q_2]
+end
 
 function MCTrajOpt.mass_matrix(body::TwoBody)
     M1 = mass_matrix(body.b1)
@@ -46,6 +55,10 @@ function splitstate(model::TwoBody, x)
     inds = SVector{7}(1:7)
     x[inds], x[inds .+ 7]
 end
+
+gettran(body::TwoBody, x) = x[SA[1,2,3]], x[SA[8,9,10]]
+getquat(body::TwoBody, x) = x[SA[4,5,6,7]], x[SA[11,12,13,14]]
+
 
 function splitvel(model::TwoBody, ν)
     inds = SVector{6}(1:6)
@@ -87,6 +100,14 @@ function ∇errstate_jacobian(model::TwoBody, x, b)
     b1,b2 = splitstate(model, b)
     G1 = ∇errstate_jacobian(x1, b1)
     G2 = ∇errstate_jacobian(x2, b2)
+    blockdiag(G1, G2)
+end
+
+function ∇errstate_jacobian2(model::TwoBody, x, b)
+    x1,x2 = splitstate(model, x)
+    b1,b2 = splitstate(model, b)
+    G1 = ∇errstate_jacobian2(x1, b1)
+    G2 = ∇errstate_jacobian2(x2, b2)
     blockdiag(G1, G2)
 end
 
@@ -136,6 +157,20 @@ function D2Kinv(model::TwoBody, x, xdot)
     D1 = D2Kinv(x1,ẋ1)
     D2 = D2Kinv(x2,ẋ2)
     blockdiag(D1,D2)
+end
+
+
+function min2max(model::TwoBody, q)
+    r_1 = q[SA[1,2,3]]    # base position
+    q_1 = q[SA[4,5,6,7]]  # pase orientation
+    θ21 = q[8]            # joint angle
+    ϕ21 = model.joint.axis  # joint axis in body 1 frame 
+    p1,p2 = model.joint.p1, model.joint.p2
+
+    q12 = expm(ϕ21*θ21)   # rotation of body 1 in body 2 frame 
+    q_2 = L(q12)*q_1
+    r_2 = r_1 + Amat(q_1)*p1 - Amat(q_2)*p2
+    return [r_1; q_1; r_2; q_2]
 end
 
 #############################################

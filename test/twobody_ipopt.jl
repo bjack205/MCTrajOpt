@@ -6,6 +6,7 @@ using LinearAlgebra
 using Test
 using Random
 using BenchmarkTools
+using FiniteDiff
 include("visualization.jl")
 
 using MathOptInterface
@@ -15,7 +16,7 @@ const MOI = MathOptInterface
 body1 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
 body2 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
 joint = RevoluteJoint(SA[0.5,0,0], SA[-0.5,0,0], SA[0,0,1])
-twobody = TwoBody(body1, body2, joint)
+twobody = SpaceBar(body1, body2, joint)
 
 # Simulate the system Forward
 sim = SimParams(1.0, 0.05) 
@@ -31,12 +32,18 @@ x0 = SA[0,0,0, 1,0,0,0, 1,0,0, 1,0,0,0.]
 X = simulate(twobody, sim, F, x0)
 xf = X[end]
 
+
 # Animation
 vis = launchvis(twobody, x0)
 visualize!(vis, twobody, X, sim)
 
+# Test minimal to maximal coordinate kinematicx
+r0 = SA[0,0,0] 
+q0 = MCTrajOpt.expm(SA[0,0,0]*deg2rad(45))
+visualize!(vis, twobody, min2max(twobody, [r0; q0; deg2rad(30)]))
+
 ## TrajOpt
-opt = SimParams(1.0, 0.25) 
+opt = SimParams(1.0, 0.1) 
 Qr = Diagonal(SA_F64[1,1,1.])
 Qq = Diagonal(SA_F64[1,1,1,1.])
 R = Diagonal(SA_F64[1])
@@ -47,7 +54,7 @@ prob = MCTrajOpt.TwoBodyMOI(body1, body2, joint, opt, Qr, Qq, R, x0, xf)
 z0 = zeros(prob.n_nlp)
 X0 = [copy(x0) for k = 1:prob.N]
 U0 = [SA[0.0] for k = 1:prob.N-1]
-λ0 = [@SVector zeros(5) for k = 1:prob.N-1]
+λ0 = [@SVector zeros(prob.p) for k = 1:prob.N-1]
 for k = 1:prob.N
     z0[prob.xinds[k]] = X0[k]
     if k < prob.N
@@ -75,8 +82,9 @@ joint_jac = ForwardDiff.jacobian(x->MCTrajOpt.joint_constraints(prob, x), xtest)
 @test MCTrajOpt.∇joint_constraints(prob, xtest) ≈ joint_jac
 
 @test MCTrajOpt.jtvp_joint_constraints(prob, xtest, λtest) ≈ joint_jac'λtest
-@time joint_hess = ForwardDiff.hessian(x->MCTrajOpt.joint_constraints(prob, x)'λtest, xtest)
-@test MCTrajOpt.∇²joint_constraints(prob, xtest, λtest) ≈ joint_hess
+# @time joint_hess = ForwardDiff.hessian(x->MCTrajOpt.joint_constraints(prob, x)'λtest, xtest)
+joint_hess = FiniteDiff.finite_difference_hessian(x->MCTrajOpt.joint_constraints(prob, x)'λtest, xtest) 
+@test MCTrajOpt.∇²joint_constraints(prob, xtest, λtest) ≈ joint_hess atol=1e-6
 
 # DEL Constraints
 using MCTrajOpt: G, L, Hmat, Tmat
@@ -123,4 +131,13 @@ jac .= 0
 MOI.eval_constraint_jacobian(prob, jac, z0)
 jac0 = zero(jac)
 ForwardDiff.jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), c, z0)
-@test jac0 ≈ jac
+FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), z0)
+@test jac0 ≈ jac atol=1e-6
+
+# Solve
+zsol, = MCTrajOpt.ipopt_solve(prob, z0)
+
+MOI.eval_constraint(prob, c, zsol)
+norm(c, Inf)
+findmax(c)
+c

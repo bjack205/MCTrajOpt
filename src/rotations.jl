@@ -43,6 +43,12 @@ function ∇G(q, b)
     Hmat'R(b)*Tmat
 end
 
+function ∇G2(q, b)
+    I3 = SA[1 0 0; 0 1 0; 0 0 1]
+    return -I3 * (q'b)
+    # Hmat'R(b)*Tmat
+end
+
 function compose_states(x1,x2)
     qi = SA[4,5,6,7]
     r3 = SA[x1[1] + x2[1], x1[2] + x2[2], x1[3] + x2[3]]
@@ -87,9 +93,29 @@ function ∇errstate_jacobian(x, b)
     ]
 end
 
+function ∇errstate_jacobian2(x, b)
+    qi = SA[4,5,6,7]
+    q = x[qi]
+    bq = b[qi]
+    G = ∇G2(q, bq)
+    SA[
+        0 0 0 0 0 0
+        0 0 0 0 0 0
+        0 0 0 0 0 0
+        0 0 0 G[1] G[4] G[7]
+        0 0 0 G[2] G[5] G[8]
+        0 0 0 G[3] G[6] G[9]
+    ]
+end
+
+function cayleymap(g)
+    M = 1/sqrt(1+g'g)
+    SA[M, M*g[1], M*g[2], M*g[3]]
+end
+
 function err2fullstate(x)
     ϕ = x[SA[4,5,6]]
-    q = SA[sqrt(1-ϕ'ϕ), ϕ[1], ϕ[2], ϕ[3]] 
+    q = cayleymap(ϕ) 
     SA[x[1], x[2], x[3], q[1], q[2], q[3], q[4]]
 end
 
@@ -194,5 +220,12 @@ Jacobian of `∇rot(q, r,)'b` wrt `q` (note the transpose)
 function ∇²rot(q, r, b)
     rhat = SA[0, r[1], r[2], r[3]]
     2*R(rhat)'L(Hmat*b)
+end
+
+function expm(ϕ)
+    θ = norm(ϕ)
+    sθ,cθ = sincos(θ/2)
+    M = sinc(θ/π/2)/2
+    SA[cθ, ϕ[1]*M, ϕ[2]*M, ϕ[3]*M]
 end
 

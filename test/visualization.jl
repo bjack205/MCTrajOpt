@@ -5,8 +5,10 @@ function launchvis(body::TwoBody, x0)
     geom = Cylinder(Point(-0.5,0,0), Point(0.5,0,0), 0.2)
     setobject!(vis["body1"], geom, MeshPhongMaterial(color=colorant"green"))
     setobject!(vis["body2"], geom, MeshPhongMaterial(color=colorant"green"))
+    setobject!(vis["body1"]["com"], Triad())
+    setobject!(vis["body2"]["com"], Triad())
     let x = x0
-        x1,x2 = MCTrajOpt.splitstate(twobody, x)
+        x1,x2 = MCTrajOpt.splitstate(body, x)
         ri,qi = SA[1,2,3], SA[4,5,6,7]
         r1,r2 = x1[ri], x2[ri]
         q1,q2 = x1[qi], x2[qi]
@@ -18,7 +20,7 @@ function launchvis(body::TwoBody, x0)
 end
 
 function visualize!(vis, model::TwoBody, x::AbstractVector{<:Real})
-    x1,x2 = MCTrajOpt.splitstate(twobody, x)
+    x1,x2 = MCTrajOpt.splitstate(model, x)
     ri,qi = SA[1,2,3], SA[4,5,6,7]
     r1,r2 = x1[ri], x2[ri]
     q1,q2 = x1[qi], x2[qi]
