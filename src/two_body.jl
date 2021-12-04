@@ -8,9 +8,10 @@ using Random
 struct RevoluteJoint
     p1::SVector{3,Float64}
     p2::SVector{3,Float64}
-    axis::SVector{3,Float64}
-    orth::SMatrix{2,4,Float64,8}
+    axis::SVector{3,Float64}      # in body1 frame
+    orth::SMatrix{2,4,Float64,8}  # in body1 frame
     function RevoluteJoint(p1, p2, axis)
+        axis = normalize(axis)
         if axis != SA[0,0,1]
             e0 = SA[0 -1 0; 1 0 0; 0 0 1] * axis  # rotate 90 degrees about z
         else
@@ -27,6 +28,18 @@ struct RevoluteJoint
         p2 = SA_F64[p2[1], p2[2], p2[3]]
         new(p1, p2, axis, orth)
     end
+end
+
+function wrench(joint::RevoluteJoint, x1, x2, u::Real)
+    q_1 = x1[SA[4,5,6,7]]
+    q_2 = x2[SA[4,5,6,7]]
+
+    q21 = L(q_2)'q_1
+    τ1 = -joint.axis * u  # torque on body 1
+    τ2 = Amat(q21)*joint.axis * u
+    ξ1 = SA[0,0,0, τ1[1], τ1[2], τ1[3]]
+    ξ2 = SA[0,0,0, τ2[1], τ2[2], τ2[3]]
+    return ξ1, ξ2
 end
 
 abstract type TwoBody end

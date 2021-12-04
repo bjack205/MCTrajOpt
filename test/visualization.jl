@@ -1,10 +1,11 @@
 using MeshCat, GeometryBasics, CoordinateTransformations, Rotations, Colors
 
-function launchvis(body::TwoBody, x0)
+function launchvis(body::DoublePendulum, x0)
     vis = Visualizer()
-    geom = Cylinder(Point(-0.5,0,0), Point(0.5,0,0), 0.2)
-    setobject!(vis["body1"], geom, MeshPhongMaterial(color=colorant"green"))
-    setobject!(vis["body2"], geom, MeshPhongMaterial(color=colorant"green"))
+    geom1 = Cylinder(Point(body.joint0.p2), Point(body.joint1.p1), 0.2)
+    geom2 = Cylinder(Point(body.joint1.p2), -Point(body.joint1.p2), 0.2)
+    setobject!(vis["body1"], geom1, MeshPhongMaterial(color=colorant"green"))
+    setobject!(vis["body2"], geom2, MeshPhongMaterial(color=colorant"green"))
     setobject!(vis["body1"]["com"], Triad())
     setobject!(vis["body2"]["com"], Triad())
     let x = x0

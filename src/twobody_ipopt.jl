@@ -365,9 +365,3 @@ function ipopt_solve(prob::TwoBodyMOI, x0; tol=1e-6, c_tol=1e-6, max_iter=1_000)
     res = MOI.get(solver, MOI.VariablePrimal(), x)
     return res, solver
 end
-
-function simulate_double_pendulum(prob::TwoBodyMOI, b1::RigidBody, b2::RigidBody)
-    joint0 = RevoluteJoint(SA[0,0,0], SA[-0.5,0,0], SA[0,0,1])
-    joint1 = RevoluteJoint(SA[0.5,0,0], SA[-0.5,0,0], SA[0,0,1])
-    
-end

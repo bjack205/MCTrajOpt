@@ -24,5 +24,6 @@ include("rigid_body_ipopt.jl")
 include("point_mass_ipopt.jl")
 include("twobody_ipopt.jl")
 include("double_pendulum.jl")
+include("dp_ipopt.jl")
 
 end # module

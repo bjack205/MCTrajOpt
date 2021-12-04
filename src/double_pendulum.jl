@@ -7,8 +7,8 @@ struct DoublePendulum <: TwoBody
 end
 
 function DoublePendulum(b1::RigidBody, b2::RigidBody; gravity::Bool=false)
-    joint0 = RevoluteJoint(SA[-0.5,0,0], SA[-0.5,0,0], SA[0,0,1])
-    joint1 = RevoluteJoint(SA[0.5,0,0], SA[-0.5,0,0], SA[0,0,1])
+    joint0 = RevoluteJoint(SA[0.0,0,0], SA[0,0,-0.5], SA[0,1,0])
+    joint1 = RevoluteJoint(SA[0,0,0.5], SA[0,0,-0.5], SA[0,1,0])
     g = gravity ? 9.81 : 0.0
     DoublePendulum(b1, b2, joint0, joint1, g)
 end
@@ -16,8 +16,9 @@ end
 function min2max(model::DoublePendulum, q)
     θ1 = q[1]
     θ2 = q[2]
+    r_0 = model.joint0.p1
     q_1 = expm(model.joint0.axis*θ1)
-    r_1 = -Amat(q_1)*model.joint0.p2
+    r_1 = r_0 - Amat(q_1)*model.joint0.p2
     q12 = expm(model.joint1.axis*θ2)
     q_2 = L(q12)*q_1
     r_2 = r_1 + Amat(q_1)*model.joint1.p1 - Amat(q_2)*model.joint1.p2
@@ -104,6 +105,8 @@ function D2midpoint(model, x1, x2, h)
     return d1x, d1v
 end
 
+const SCALING = 4
+
 function D1Ld(model::DoublePendulum, x1, x2, h)
     m_1 = model.b1.mass
     m_2 = model.b2.mass
@@ -115,10 +118,10 @@ function D1Ld(model::DoublePendulum, x1, x2, h)
     q2_1, q2_2 = getquat(model, x2)
     g = model.gravity
     [
-        -m_1/h * (r2_1-r1_1) - h*m_1*g*SA[1,0,0]/2
-        2/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1
-        -m_2/h * (r2_2-r1_2) - h*m_2*g*SA[1,0,0]/2
-        2/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'q2_2
+        -m_1/h * (r2_1-r1_1) - h*m_1*g*SA[0,0,1]/2
+        SCALING/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1
+        -m_2/h * (r2_2-r1_2) - h*m_2*g*SA[0,0,1]/2
+        SCALING/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'q2_2
     ]
 end
 
@@ -134,15 +137,16 @@ function ∇D1Ld(model::DoublePendulum, x1, x2, h)
     Z34 = @SMatrix zeros(3,3)
     Z33 = @SMatrix zeros(3,3)
     Z37 = @SMatrix zeros(3,6)
-    dq1_1 = 2/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'R(q2_1)*Tmat * G(q1_1) + 
-        2/h * ∇G2(q1_1, Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1)
-    dq2_1 = 2/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'G(q2_1) + 
-        2/h * G(q1_1)'Tmat*L(Hmat * J_1 * Hmat'L(q1_1)'q2_1)*Tmat*G(q2_1)
+    s = SCALING
+    dq1_1 = s/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'R(q2_1)*Tmat * G(q1_1) + 
+        s/h * ∇G2(q1_1, Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1)
+    dq2_1 = s/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'G(q2_1) + 
+        s/h * G(q1_1)'Tmat*L(Hmat * J_1 * Hmat'L(q1_1)'q2_1)*Tmat*G(q2_1)
 
-    dq1_2 = 2/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'R(q2_2)*Tmat*G(q1_2) + 
-        2/h * ∇G2(q1_2, Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'q2_2)
-    dq2_2 = 2/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'G(q2_2) + 
-        2/h * G(q1_2)'Tmat*L(Hmat * J_2 * Hmat'L(q1_2)'q2_2)*Tmat*G(q2_2)
+    dq1_2 = s/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'R(q2_2)*Tmat*G(q1_2) + 
+        s/h * ∇G2(q1_2, Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'q2_2)
+    dq2_2 = s/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'G(q2_2) + 
+        s/h * G(q1_2)'Tmat*L(Hmat * J_2 * Hmat'L(q1_2)'q2_2)*Tmat*G(q2_2)
 
     d1 = [
         [m_1/h*I3 Z34    Z37            ];
@@ -169,11 +173,12 @@ function D2Ld(model::DoublePendulum, x1, x2, h)
     q1_1, q1_2 = getquat(model, x1)
     q2_1, q2_2 = getquat(model, x2)
     g = model.gravity
+    s = SCALING
     [
-        m_1/h * (r2_1-r1_1) - h*m_1*g*SA[1,0,0]/2
-        2/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1
-        m_2/h * (r2_2-r1_2) - h*m_2*g*SA[1,0,0]/2
-        2/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'q2_2
+        m_1/h * (r2_1-r1_1) - h*m_1*g*SA[0,0,1]/2
+        s/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1
+        m_2/h * (r2_2-r1_2) - h*m_2*g*SA[0,0,1]/2
+        s/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'q2_2
     ]
 end
 
@@ -189,16 +194,17 @@ function ∇D2Ld(model::DoublePendulum, x1, x2, h)
     Z34 = @SMatrix zeros(3,3)
     Z33 = @SMatrix zeros(3,3)
     Z37 = @SMatrix zeros(3,6)
+    s = SCALING
 
-    dq1_1 = 2/h * G(q2_1)'R(Hmat * J_1 * Hmat'L(q1_1)'q2_1)*G(q1_1) + 
-        2/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'R(q2_1)*Tmat*G(q1_1)
-    dq2_1 = 2/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'G(q2_1) + 
-        2/h * ∇G2(q2_1, L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1)
+    dq1_1 = s/h * G(q2_1)'R(Hmat * J_1 * Hmat'L(q1_1)'q2_1)*G(q1_1) + 
+        s/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'R(q2_1)*Tmat*G(q1_1)
+    dq2_1 = s/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'G(q2_1) + 
+        s/h * ∇G2(q2_1, L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1)
 
-    dq1_2 = 2/h * G(q2_2)'R(Hmat * J_2 * Hmat'L(q1_2)'q2_2)*G(q1_2) + 
-        2/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'R(q2_2)*Tmat*G(q1_2)
-    dq2_2 = 2/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'G(q2_2) + 
-        2/h * ∇G2(q2_2, L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'q2_2)
+    dq1_2 = s/h * G(q2_2)'R(Hmat * J_2 * Hmat'L(q1_2)'q2_2)*G(q1_2) + 
+        s/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'R(q2_2)*Tmat*G(q1_2)
+    dq2_2 = s/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'G(q2_2) + 
+        s/h * ∇G2(q2_2, L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'q2_2)
 
     d1 = [
         [-m_1/h*I3 Z34    Z37            ];
@@ -302,7 +308,15 @@ function ∇DEL3(model::DoublePendulum, x1, x2, x3, λ, F1, F2, h)
     return dx3_1
 end
 
-function simulate(model::DoublePendulum, params::SimParams, F, x0; newton_iters=20, tol=1e-12)
+function getwrenches(model::DoublePendulum, x, u)
+    x_0 = [model.joint0.p1; SA[1,0,0,0]]
+    x_1, x_2 = splitstate(model, x)
+    ξ0_0, ξ0_1 = wrench(model.joint0, x_0, x_1, u[1])
+    ξ1_1, ξ1_2 = wrench(model.joint1, x_1, x_2, u[2])
+    return [ξ0_1 + ξ1_1; ξ1_2]
+end
+
+function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
     X = [zero(x0) for k = 1:params.N]
     X[1] = x0
     X[2] = x0
@@ -317,7 +331,10 @@ function simulate(model::DoublePendulum, params::SimParams, F, x0; newton_iters=
         λ = @SVector zeros(10)
 
         for i = 1:newton_iters
-            e1 = DEL(model, X[k-1], X[k], X[k+1], λ, F[k-1],F[k], h)
+            F1 = getwrenches(model, X[k-1], U[k-1])
+            F2 = getwrenches(model, X[k], U[k])
+
+            e1 = DEL(model, X[k-1], X[k], X[k+1], λ, F1,F2, h)
             e2 = joint_constraints(model, X[k+1])
             e = [e1; e2]
             if norm(e, Inf) < tol
@@ -325,7 +342,7 @@ function simulate(model::DoublePendulum, params::SimParams, F, x0; newton_iters=
                 break
             end
             # D = ∇DEL3(model, X[k-1], X[k], X[k+1], λ, F[k-1],F[k], h)
-            D = ForwardDiff.jacobian(x3->DEL(model, X[k-1], X[k], x3, λ, F[k-1], F[k], h), X[k+1]) * errstate_jacobian(model, X[k+1])
+            D = ForwardDiff.jacobian(x3->DEL(model, X[k-1], X[k], x3, λ, F1, F2, h), X[k+1]) * errstate_jacobian(model, X[k+1])
             C2 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k])
             C3 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k+1])
             # C2 = ∇joint_constraints(model, X[k]) * errstate_jacobian(model, X[k])
