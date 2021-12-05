@@ -26,4 +26,6 @@ include("twobody_ipopt.jl")
 include("double_pendulum.jl")
 include("dp_ipopt.jl")
 
+include("sparse.jl")
+
 end # module
