@@ -61,6 +61,7 @@ e = @SVector zeros(12)
     MC.errstate_jacobian(model, x1test)
 
 # Discrete Legendre transforms
+dlt1 = zeros(12)
 ∇Ld1 = let 
     xmid, vmid = MC.midpoint(model, x1test, x2test, h) 
     dx1,dv1 = MC.D1midpoint(model, x1test, x2test, h)
@@ -69,7 +70,9 @@ end
 @test ForwardDiff.gradient(x->MC.discretelagrangian(model, x, x2test, h), x1test) ≈ ∇Ld1
 @test MC.D1Ld(model, x1test, x2test, h) ≈ 
     ForwardDiff.gradient(e->MC.discretelagrangian(model, x1test ⊕ e, x2test, h), e)
+@test MC.D1Ld(model, x1test, x2test, h) ≈ MC.D1Ld!(model, dlt1, x1test, x2test, h)
 
+dlt2 = zeros(12)
 ∇Ld2 = let 
     xmid, vmid = MC.midpoint(model, x1test, x2test, h) 
     dx2,dv2 = MC.D2midpoint(model, x1test, x2test, h)
@@ -79,6 +82,7 @@ end
 @test MC.errstate_jacobian(model,x2test)'∇Ld2 ≈ MC.D2Ld(model, x1test, x2test, h)
 @test MC.D2Ld(model, x1test, x2test, h) ≈ 
     ForwardDiff.gradient(e->MC.discretelagrangian(model, x1test, x2test ⊕ e, h), e)
+@test MC.D2Ld(model, x1test, x2test, h) ≈ MC.D2Ld!(model, dlt2, x1test, x2test, h)
 
 
 # Joint Constraints
@@ -90,12 +94,17 @@ c = MC.joint_constraints(model, xviol)
 xviol = SVector{14}([x0[1:10]; MC.expm(SA[1,0,0]*0.01)])
 c = MC.joint_constraints(model, xviol)
 @test norm(c, Inf) ≈ 0.005 atol=1e-6
+c0 = zeros(10)
+@test MC.joint_constraints!(model, c0, xviol) ≈ c
 
 @test MC.∇joint_constraints(model, xtest) ≈ 
     ForwardDiff.jacobian(x->MC.joint_constraints(model, x), xtest)
 
 λtest = @SVector randn(10)
 @test MC.jtvp_joint_constraints(model, xtest, λtest) ≈ MC.∇joint_constraints(model, xtest)'λtest
+jtvp = zeros(12)
+MC.jtvp_joint_constraints!(model, jtvp, xtest, λtest)
+@test jtvp ≈ MC.errstate_jacobian(model, xtest)'MC.∇joint_constraints(model, xtest)'λtest
 
 @test MC.∇²joint_constraints(model, xtest, λtest) ≈ 
     FiniteDiff.finite_difference_hessian(x->MC.joint_constraints(model, x)'λtest, xtest) atol=1e-6
@@ -112,7 +121,10 @@ F2 = copy(F1)
 λ = @SVector zeros(10)
 x3test = x2test ⊕ dx 
 MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
-MC.∇joint_constraints(model, x2test)
+del = zeros(12)
+MC.DEL!(model, del, x1test, x2test, x3test, λ, F1, F2, h)
+del ≈ MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
+
 
 e = zeros(24)
 hess = FiniteDiff.finite_difference_hessian(e->MC.discretelagrangian(model, x1test ⊕ e[1:12], x2test ⊕ e[13:24], h), e)
@@ -156,59 +168,3 @@ visualize!(vis, model, x0)
 Xsim = MC.simulate(model, sim, U, x0)
 visualize!(vis, model, Xsim, sim)
 
-
-#############################################
-# Trajectory Optimization
-#############################################
-
-# Generate the model
-body1 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
-body2 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
-model = DoublePendulum(body1, body2, gravity = false)
-
-# Generate target trajectory
-opt = SimParams(1.0, 0.1)
-control(t) = SA[1.0 * (t > 0.5), cos(pi*t)*4]
-U = control.(opt.thist)
-x0 = MC.min2max(model, [0.0,0])
-Xref = MC.simulate(model, opt, U, x0)
-
-# Visualizer
-if !isdefined(Main, :vis)
-    vis = launchvis(model, x0)
-end
-visualize!(vis, model, Xref, opt)
-
-## Set up the problems
-Qr = Diagonal(SA_F64[1,1,1.])
-Qq = Diagonal(SA_F64[1,1,1,1.])
-R = Diagonal(SA_F64[1e-3, 1e-3])
-prob = MC.DoublePendulumMOI(model, opt, Qr, Qq, R, x0, Xref)
-
-# Create initial guess
-z0 = zeros(prob.n_nlp)
-U0 = [SA[0.0,0.0] for k = 1:prob.N-1]
-λ0 = [@SVector zeros(prob.p) for k = 1:prob.N-1]
-for k = 1:prob.N
-    z0[prob.xinds[k]] = Xref[k]
-    if k < prob.N
-        z0[prob.uinds[k]] = U0[k]
-        z0[prob.λinds[k]] = λ0[k] 
-    end
-end
-
-# Test functions
-grad_f = zeros(prob.n_nlp)
-c = zeros(prob.m_nlp)
-jac = zeros(prob.m_nlp, prob.n_nlp)
-
-MOI.eval_objective(prob, z0)
-MOI.eval_objective_gradient(prob, grad_f, z0)
-MOI.eval_constraint(prob, c, z0)
-MOI.eval_constraint_jacobian(prob, jac, z0)
-
-zsol, = MC.ipopt_solve(prob, z0, tol=1e-4)
-Xsol = [zsol[xi] for xi in prob.xinds]
-Usol = [zsol[ui] for ui in prob.uinds]
-
-visualize!(vis, model, Xsol, opt)

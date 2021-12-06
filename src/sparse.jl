@@ -93,7 +93,7 @@ function getblock(blocks::BlockViews, v::AbstractVector, block::BlockID)
     reshape(vecview, block.m, block.n)
 end
 
-function setblock!(blocks::BlockViews, i1::UnitRange, i2::UnitRange)
+function setblock!(blocks::BlockViews, i1::AbstractVector, i2::AbstractVector)
     block = BlockID(i1, i2)
     if !haskey(blocks.blk2vec, block)
         inds = blocks.len .+ (1:length(block))
