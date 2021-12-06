@@ -59,8 +59,24 @@ D1L_dot(body, x, xdot) = D1L_vel(body, x, inv_kinematics(body, x, xdot)) +
 D2L_dot(body, x, xdot) = D2Kinv(body, x, xdot)'D2L_vel(body, x, inv_kinematics(body, x, xdot))
 
 #############################################
-# Discrete Lagrangian
+# Midpoint quadrature 
 #############################################
+function midpoint_lin(body::RigidBody, r1, r2, h)
+    r = (r1 + r2) / 2
+    v = (r2 - r1) / h
+    return r, v
+end
+D1midpoint_lin(body, r1, r2, h) = I3 / 2, -I3/h 
+D2midpoint_lin(body, r1, r2, h) = I3 / 2, +I3/h 
+
+function midpoint_rot(body::RigidBody, q1, q2, h)
+    q = q1
+    ω = 2*Hmat'L(q1)'q2/h
+    return q, ω
+end
+D1midpoint_ang(body::RigidBody, q1, q2, h) = I4, 2*Hmat'R(q2)*Tmat/h
+D2midpoint_ang(body::RigidBody, q1, q2, h) = (@SMatrix zeros(4,4)), 2*Hmat'L(q2)'/h
+
 function Ld(body, x1, x2, h)
     h * Lagrangian_dot(body, (x1+x2)/2, (x2-x1)/h)
 end

@@ -13,6 +13,9 @@ function DoublePendulum(b1::RigidBody, b2::RigidBody; gravity::Bool=false)
     DoublePendulum(b1, b2, joint0, joint1, g)
 end
 
+basetran(model::DoublePendulum) = SA[0,0,0.]
+basequat(model::DoublePendulum) = SA[1,0,0,0.]
+
 function min2max(model::DoublePendulum, q)
     θ1 = q[1]
     θ2 = q[2]
@@ -25,14 +28,32 @@ function min2max(model::DoublePendulum, q)
     return [r_1; q_1; r_2; q_2]
 end
 
-kinetic_energy(model::DoublePendulum, x, v) = 0.5 * v'mass_matrix(model)*v
+function kinetic_energy(model::DoublePendulum, x, v)
+    T = 0.0
+    for j = 1:2
+        body = j == 1 ? model.b1 : model.b2
+        ν = getlinvel(model, v, j)
+        ω = getangvel(model, v, j)
+        T += 0.5*(body.mass*ν'ν + ω'body.J*ω)
+    end
+    return T
+    # 0.5 * v'mass_matrix(model)*v
+end
 
 function potential_energy(model::DoublePendulum, x)
-    r_1, r_2 = gettran(model, x)
-    m1 = model.b1.mass
-    m2 = model.b2.mass
+    U = 0.0
     g = model.gravity
-    return g*(m1*r_1[3] + m2*r_2[3])
+    for j = 1:2
+        r = gettran(model, x, j)
+        body = j == 1 ? model.b1 : model.b2
+        U += g*body.mass*r[3]
+    end
+    return U
+    # r_1, r_2 = gettran(model, x)
+    # m1 = model.b1.mass
+    # m2 = model.b2.mass
+    # g = model.gravity
+    # return g*(m1*r_1[3] + m2*r_2[3])
 end
 
 function ∇potential_energy(model::DoublePendulum, x)
@@ -56,17 +77,21 @@ end
 function midpoint(model::DoublePendulum, x1, x2, h)
     r1_1, r1_2 = gettran(model, x1)
     r2_1, r2_2 = gettran(model, x2)
-    r_1 = (r1_1 + r2_1)/2
-    r_2 = (r1_2 + r2_2)/2
-    v_1 = (r2_1 - r1_1)/h
-    v_2 = (r2_2 - r1_2)/h
+    r_1, v_1 = midpoint_lin(model.b1, r1_1, r2_1, h)
+    r_2, v_2 = midpoint_lin(model.b2, r1_2, r2_2, h)
+    # r_1 = (r1_1 + r2_1)/2
+    # r_2 = (r1_2 + r2_2)/2
+    # v_1 = (r2_1 - r1_1)/h
+    # v_2 = (r2_2 - r1_2)/h
 
     q1_1, q1_2 = getquat(model, x1)
     q2_1, q2_2 = getquat(model, x2)
-    q_1 = q1_1
-    q_2 = q1_2
-    ω_1 = 2*Hmat'L(q1_1)'q2_1/h
-    ω_2 = 2*Hmat'L(q1_2)'q2_2/h
+    q_1, ω_1 = midpoint_rot(model.b1, q1_1, q2_1, h)
+    q_2, ω_2 = midpoint_rot(model.b2, q1_2, q2_2, h)
+    # q_1 = q1_1
+    # q_2 = q1_2
+    # ω_1 = 2*Hmat'L(q1_1)'q2_1/h
+    # ω_2 = 2*Hmat'L(q1_2)'q2_2/h
     
     x = [r_1; q_1; r_2; q_2]
     v = [v_1; ω_1; v_2; ω_2]
@@ -106,6 +131,24 @@ function D2midpoint(model, x1, x2, h)
 end
 
 const SCALING = 4
+
+function D1Ld!(model::DoublePendulum, y, x1, x2, h)
+    ir = 1:3
+    iq = 4:6
+    g = model.gravity
+    for j = 1:2
+        body = j == 1 ? model.b1 : model.b2
+        m, J = body.mass, body.J
+        r1, r2 = gettran(model, x1, j), gettran(model, x2, j)
+        q1, q2 = getquat(model, x1, j), getquat(model, x2, j)
+        
+        y[ir] .+= -m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
+        y[iq] .+= SCALING/h * G(q1)'Tmat*R(q2)'Hmat * J * Hmat'L(q1)'q2
+        ir = ir .+ 6
+        iq = iq .+ 6
+    end
+    return y
+end
 
 function D1Ld(model::DoublePendulum, x1, x2, h)
     m_1 = model.b1.mass
@@ -161,6 +204,24 @@ function ∇D1Ld(model::DoublePendulum, x1, x2, h)
         [Z37               Z33      dq2_2]
     ]
     return d1, d2
+end
+
+function D2Ld!(model::DoublePendulum, y, x1, x2, h)
+    ir = 1:3
+    iq = 4:6
+    g = model.gravity
+    for j = 1:2
+        body = j == 1 ? model.b1 : model.b2
+        m, J = body.mass, body.J
+        r1, r2 = gettran(model, x1, j), gettran(model, x2, j)
+        q1, q2 = getquat(model, x1, j), getquat(model, x2, j)
+        
+        y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
+        y[iq] .+= SCALING/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
+        ir = ir .+ 6
+        iq = iq .+ 6
+    end
+    return y
 end
 
 function D2Ld(model::DoublePendulum, x1, x2, h)
@@ -221,6 +282,18 @@ function ∇D2Ld(model::DoublePendulum, x1, x2, h)
     return d1, d2
 end
 
+function joint_constraints!(model::DoublePendulum, c, x)
+    p = 5
+    for j = 1:2
+        joint = j == 1 ? model.joint0 : model.joint1
+        ci = (1:p) .+ (j-1)*p
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        c[ci] .= joint_constraint(joint, r_1, q_1, r_2, q_2)
+    end
+    return c
+end
+
 function joint_constraints(model::DoublePendulum, x)
     r_1, r_2 = gettran(model, x)
     q_1, q_2 = getquat(model, x)
@@ -229,7 +302,7 @@ function joint_constraints(model::DoublePendulum, x)
     joint1 = model.joint1
     [
         joint0.p1 - (r_1 + Amat(q_1)*joint0.p2);
-        joint0.orth * L(q_1)'q_0;
+        joint0.orth * L(q_0)'q_1;
         r_1 + Amat(q_1)*joint1.p1 - (r_2 + Amat(q_2)*joint1.p2);  # joint location 
         joint1.orth * L(q_1)'q_2                                  # joint axis
     ]
@@ -245,10 +318,38 @@ function ∇joint_constraints(model::DoublePendulum, x)
     I3 = @SMatrix [1 0 0; 0 1 0; 0 0 1]
     Z23 = @SMatrix zeros(2,3)
     jactran_1 = [-I3 -∇rot(q_1, joint0.p2) @SMatrix zeros(3,7)]
-    jacaxis_1 = [Z23 joint0.orth*L(q_0)'*Tmat @SMatrix zeros(2,7)]
+    jacaxis_1 = [Z23 joint0.orth*L(q_0)' @SMatrix zeros(2,7)]
     jactran_2 = [I3 ∇rot(q_1, joint1.p1) -I3 -∇rot(q_2, joint1.p2)]
     jacaxis_2 = [Z23 joint1.orth*R(q_2)*Tmat Z23 joint1.orth*L(q_1)']
     return [jactran_1; jacaxis_1; jactran_2; jacaxis_2]
+end
+
+function jtvp_joint_constraints!(model::DoublePendulum, y, x, λ)
+    ir_1 = (1:3) .- 6
+    iq_1 = (4:6) .- 6
+    p = 5
+    iλt = SA[1,2,3]
+    iλa = SA[4,5]
+    for j = 1:2
+        ir_2 = ir_1 .+ 6
+        iq_2 = iq_1 .+ 6
+        ci = (1:p) .+ (j-1)*p
+        joint = j == 1 ? model.joint0 : model.joint1
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        λj = view(λ, ci)
+
+        dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
+        if ir_1[1] > 0 
+            y[ir_1] .+= dr_1
+            y[iq_1] .+= G(q_1)'dq_1
+        end
+        y[ir_2] .+= dr_2
+        y[iq_2] .+= G(q_2)'dq_2
+
+        ir_1 = ir_1 .+ 6
+        iq_1 = iq_1 .+ 6
+    end
 end
 
 function jtvp_joint_constraints(model::DoublePendulum, x, λ)
@@ -261,7 +362,7 @@ function jtvp_joint_constraints(model::DoublePendulum, x, λ)
     q_0 = SA[1,0,0,0]
 
     dr_1 = -λt_1 + λt_2 
-    dq_1 = -∇rot(q_1, joint0.p2)'λt_1 + Tmat*L(q_0)*joint0.orth'λa_1 + 
+    dq_1 = -∇rot(q_1, joint0.p2)'λt_1 + L(q_0)'joint0.orth'λa_1 + 
             ∇rot(q_1, joint1.p1)'λt_2 + Tmat*R(q_2)'joint1.orth'λa_2
     dr_2 = -λt_2
     dq_2 = -∇rot(q_2, joint1.p2)'λt_2 + L(q_1)*joint1.orth'λa_2
@@ -288,6 +389,55 @@ end
 function DEL(model::DoublePendulum, x1, x2, x3, λ, F1, F2, h)
     D2Ld(model, x1, x2, h) + D1Ld(model, x2, x3, h) + h*(F1 + F2)/2 + 
         h*errstate_jacobian(model, x2)'∇joint_constraints(model, x2)'λ
+end
+
+function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h)
+    @. y = h*(F1 + F2)/2
+    # D2Ld!(model, y, x1, x2, h)
+    # D1Ld!(model, y, x2, x3, h)
+    # jtvp_joint_constraints!(model, y, x2, λ)
+
+    ir = 1:3
+    iq = 4:6
+    p = 5
+    g = model.gravity
+    for j = 1:2
+        body = j == 1 ? model.b1 : model.b2
+        m, J = body.mass, body.J
+        r1, r2, r3, = gettran(model, x1, j), gettran(model, x2, j), gettran(model, x3, j)
+        q1, q2, q3, = getquat(model, x1, j), getquat(model, x2, j), getquat(model, x3, j)
+        
+        # D1Ld
+        y[ir] .+= -m/h * (r3 - r2) - h*m*g*SA[0,0,1]/2
+        y[iq] .+= SCALING/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
+
+        # D2Ld
+        y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
+        y[iq] .+= SCALING/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
+
+        # Joint constraints
+        joint = j == 1 ? model.joint0 : model.joint1
+        ir_1 = ir .- 6
+        iq_1 = iq .- 6
+        ir_2 = ir
+        iq_2 = iq
+        ci = (1:p) .+ (j-1)*p 
+
+        r_1, r_2 = gettran(model, x2, j-1), gettran(model, x2, j)
+        q_1, q_2 = getquat(model, x2, j-1), getquat(model, x2, j)
+
+        λj = view(λ, ci)
+        dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
+        if ir_1[1] > 0 
+            y[ir_1] .+= dr_1
+            y[iq_1] .+= G(q_1)'dq_1
+        end
+        y[ir_2] .+= dr_2
+        y[iq_2] .+= G(q_2)'dq_2
+
+        ir = ir .+ 6
+        iq = iq .+ 6
+    end
 end
 
 function ∇DEL(model::DoublePendulum, x1, x2, x3, λ, F1, F2,h)

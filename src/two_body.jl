@@ -30,6 +30,40 @@ struct RevoluteJoint
     end
 end
 
+
+function joint_constraint(joint::RevoluteJoint, r_1, q_1, r_2, q_2)
+    [
+        r_1 + Amat(q_1)*joint.p1 - (r_2 + Amat(q_2)*joint.p2);  # joint location 
+        joint.orth * L(q_1)'q_2                                 # joint axis
+    ]
+end
+
+function ∇joint_constraint(joint::RevoluteJoint, r_1, q_1, r_2, q_2)
+    Z23 = @SMatrix zeros(2,3)
+    dr_1 = [I3; Z23]
+    dq_1 = [∇rot(q_1, joint.p1); joint.orth*R(q_2)'Tmat]
+    dr_2 = [-I3; Z23]
+    dq_2 = [-∇rot(q_2, joint.p2); joint.orth*L(q_1)']
+    return dr_1, dq_1, dr_2, dq_2
+end
+
+function jtvp_joint_constraint(joint::RevoluteJoint, r_1, q_1, r_2, q_2, λ)
+    λt = λ[SA[1,2,3]]
+    λa = λ[SA[4,5]]
+    dr_1 = λt
+    dq_1 = ∇rot(q_1, joint.p1)'λt + Tmat*R(q_2)'joint.orth'λa
+    dr_2 = -λt
+    dq_2 = -∇rot(q_2, joint.p2)'λt + L(q_1)*joint.orth'λa 
+    return dr_1, dq_1, dr_2, dq_2
+end
+
+function joint_kinematics(joint::RevoluteJoint, r_1, q_1, θ)
+    q12 = expm(Amat(q_1)*joint.axis * θ)
+    q_2 = L(q12)*q_1
+    r_2 = r_1 + Amat(q_1)*joint.p1 - Amat(q_2)*joint.p2
+    return r_2, q_2
+end
+
 function wrench(joint::RevoluteJoint, x1, x2, u::Real)
     q_1 = x1[SA[4,5,6,7]]
     q_2 = x2[SA[4,5,6,7]]
@@ -70,7 +104,12 @@ function splitstate(model::TwoBody, x)
 end
 
 gettran(body::TwoBody, x) = x[SA[1,2,3]], x[SA[8,9,10]]
+gettran(body::TwoBody, x, j) = j == 0 ? basetran(body) : x[SA[1,2,3] .+ (j-1)*7]
 getquat(body::TwoBody, x) = x[SA[4,5,6,7]], x[SA[11,12,13,14]]
+getquat(body::TwoBody, x, j) = j == 0 ? basequat(body) : x[SA[4,5,6,7] .+ (j-1)*7]
+getlinvel(body::TwoBody, v, j) = v[SA[1,2,3] .+ (j-1)*6]
+getangvel(body::TwoBody, v, j) = v[SA[4,5,6] .+ (j-1)*6]
+
 
 
 function splitvel(model::TwoBody, ν)
