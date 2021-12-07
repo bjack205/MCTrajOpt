@@ -34,7 +34,7 @@ const Hmat = SA[
 const Tmat = Diagonal(SA[1,-1,-1,-1])
 
 function G(q)
-    return L(q)*Hmat
+    return L(q)*Hmat/2
 end
 
 """
@@ -112,6 +112,7 @@ function ∇errstate_jacobian2(x, b)
 end
 
 function cayleymap(g)
+    g /= 2
     M = 1/sqrt(1+g'g)
     SA[M, M*g[1], M*g[2], M*g[3]]
 end
@@ -232,3 +233,17 @@ function expm(ϕ)
     SA[cθ, ϕ[1]*M, ϕ[2]*M, ϕ[3]*M]
 end
 
+function logm(q)
+    w = q[1]
+    x = q[2]
+    y = q[3]
+    z = q[4]
+
+    θ = sqrt(x^2 + y^2 + z^2)
+    if θ > 1e-6
+        M = atan(θ, w)/θ
+    else
+        M = (1-θ^2/(3w^2))/w
+    end
+    2*M*SA[x,y,z]
+end

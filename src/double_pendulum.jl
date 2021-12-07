@@ -130,7 +130,7 @@ function D2midpoint(model, x1, x2, h)
     return d1x, d1v
 end
 
-const SCALING = 4
+const SCALING = 2
 
 function D1Ld!(model::DoublePendulum, y, x1, x2, h)
     ir = 1:3

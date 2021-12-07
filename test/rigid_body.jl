@@ -6,6 +6,12 @@ using LinearAlgebra
 using Test
 using Random
 using BenchmarkTools
+const MC = MCTrajOpt
+
+## Check the attitude Jacobian
+q0 = normalize(@SVector randn(4))
+g = zeros(3)
+ForwardDiff.jacobian(g->MC.L(q0)*MC.cayleymap(g), g) ≈ MC.G(q0)
 
 ##
 r0 = @SVector randn(3)
@@ -24,11 +30,8 @@ ẋ0 = kinematics(x0,ν0)
 # Test the Lagrangian derivatives
 body = RigidBody(1.0, Diagonal([0.1, 1, 1]))
 params = SimParams(5.0, 0.05) 
-@test D1L_vel(body,x0,ν0) ≈ ForwardDiff.gradient(x->Lagrangian_vel(body,x,ν0), x0)
-@test D2L_vel(body,x0,ν0) ≈ ForwardDiff.gradient(ν->Lagrangian_vel(body,x0,ν), ν0)
-
-@test D1L_dot(body,x0,ẋ0) ≈ ForwardDiff.gradient(x->Lagrangian_dot(body,x,ẋ0),x0)
-@test D2L_dot(body,x0,ẋ0) ≈ ForwardDiff.gradient(xdot->Lagrangian_dot(body,x0,xdot),ẋ0)
+@test D1L(body,x0,ν0) ≈ ForwardDiff.gradient(x->Lagrangian(body,x,ν0), x0)
+@test D2L(body,x0,ν0) ≈ ForwardDiff.gradient(ν->Lagrangian(body,x0,ν), ν0)
 
 # Test discrete Lagrangian derivatives
 x1 = copy(x0)
@@ -36,72 +39,24 @@ x2 = [@SVector randn(3); normalize(@SVector randn(4))]
 @test D1Ld(body,x1,x2,params.h) ≈ ForwardDiff.gradient(x->Ld(body,x,x2,params.h), x1)
 @test D2Ld(body,x1,x2,params.h) ≈ ForwardDiff.gradient(x->Ld(body,x1,x,params.h), x2)
 
+# Test DEL
+F1 = @SVector randn(6)
+F2 = @SVector randn(6)
+x3 = [@SVector randn(3); normalize(@SVector randn(4))]
+e = zeros(6)
+⊕(x1,e) = MC.compose_states(x1, MC.err2fullstate(e))
+@test MC.DEL(body, x1, x2, x3, F1, F2, params.h) ≈ ForwardDiff.gradient(
+        e->MC.Ld(body, x1, x2 ⊕ e, params.h) + MC.Ld(body, x2 ⊕ e, x3, params.h), e 
+    ) + params.h*(F1+F2)/2
+
+
 # Test simulation
-F = [SA[0,0,0.5*(0.1<t<0.5), 0,0,1.0* (0.1<t<.5)] for t in params.thist]  # force in the world frame, torque in body frame?
-x0 = SA[0,0,0, sqrt(2)/2, sqrt(2)/2, 0,0]
-X = [zero(x0) for k = 1:params.N]
-X[1] = x0
-X[2] = x0
-X[3] = x0
-e = DEL(body, X[1], X[2], X[3], F[1], F[2], params.h)
-H = D3_DEL(body, X[1], X[2], X[3], F[1], F[2], params.h)
-
-X = simulate(body, params, F, x0)
-
-## Plots
-using Plots
-Xdot = diff(X) ./ params.h 
-V = [inv_kinematics(X[k], Xdot[k]) for k = 1:length(Xdot)] 
-Xhist = hcat(Vector.(X)...)'
-Vhist = hcat(Vector.(V)...)'
-plot(params.thist[1:end-1], Vhist[:,4:6])
-
-## Visualization
-using MeshCat, GeometryBasics, CoordinateTransformations, Rotations, Colors
-vis = Visualizer()
-dim = Vec(0.5, 0.7, 0.3)
-geom  = Rect3D(-dim/2, dim)
-setobject!(vis["body"], geom, MeshPhongMaterial(color=colorant"green"))
-open(vis)
-
-anim = MeshCat.Animation(floor(Int,1/params.h))
-for k = 1:params.N
-    atframe(anim, k) do
-        r = X[k][1:3]
-        q = X[k][4:7]
-        settransform!(vis["body"], compose(Translation(r), LinearMap(UnitQuaternion(q))))
-    end
-end
-setanimation!(vis, anim)
-
-## Check the simulation
-let
-    f(x,u) = SA[x[2], u[1]]
-    times = range(0,1.0, length=101)
-    x = SA[0,0]
-    u = SA[1.0]
-    for k = 1:length(times)-1
-        # RK4
-        h = times[k+1] - times[k]
-        k1 = f(x, u) * h
-        k2 = f(x + k1/2, u) * h
-        k3 = f(x + k2/2, u) * h
-        k4 = f(x + k3, u) * h
-        x += (k1 + 2k2 + 2k3 + k4)/6
-    end
-    x
-end
-
-body0 = RigidBody(1.0, Diagonal([1.0, 1.0, 1.0]))
-params0 = SimParams(1.0, 0.001)
+params = SimParams(1.0, 0.001) 
+F = [SA[0,0,1, 0,0,1] for t in params.thist]  # force in the world frame, torque in body frame?
 x0 = SA[0,0,0, 1,0,0,0.]
-F = [SA[0,0,0, 0,0,1.0] for k = 1:params0.N]
-X = simulate(body0, params0, F, x0)
-X[end][4:7]
-norm(X[end][4:7])
-Rotations.expm(0.25*[0,0,1])
-aa = AngleAxis(UnitQuaternion(X[end][4:7]))
-aa.theta
+X = simulate(body, params, F, x0, newton_iters=50)
+@test abs(X[end][3] - 0.5) < 1e-3
+@test abs(norm(MC.logm(X[end][4:7])) - 0.5) < 1e-3
 
 
 #############################################

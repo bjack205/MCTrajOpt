@@ -13,6 +13,8 @@ mass_matrix(body::RigidBody) = SA[
 ]
 
 state_dim(::RigidBody) = 7
+gettran(::RigidBody, x) = x[SA[1,2,3]]
+getquat(::RigidBody, x) = x[SA[4,5,6,7]]
 
 mutable struct SimParams
     h::Float64   # time step (sec)
@@ -39,7 +41,7 @@ end
 #############################################
 # Lagrangian
 #############################################
-function Lagrangian_vel(body, x, ν)
+function Lagrangian(body, x, ν)
     M = mass_matrix(body)
     T = 1/2 * ν'M*ν
     U = 0.0
@@ -51,8 +53,8 @@ function Lagrangian_dot(body, x, xdot)
     Lagrangian_vel(body, x, ν)
 end
 
-D1L_vel(body, x, ν) = @SVector zeros(state_dim(body))
-D2L_vel(body, x, ν) = mass_matrix(body) * ν 
+D1L(body, x, ν) = @SVector zeros(state_dim(body))
+D2L(body, x, ν) = mass_matrix(body) * ν 
 
 D1L_dot(body, x, xdot) = D1L_vel(body, x, inv_kinematics(body, x, xdot)) + 
     D1Kinv(body, x, xdot)'D2L_vel(body, x, inv_kinematics(body, x, xdot))
@@ -75,22 +77,48 @@ function midpoint_rot(body::RigidBody, q1, q2, h)
     return q, ω
 end
 D1midpoint_ang(body::RigidBody, q1, q2, h) = I4, 2*Hmat'R(q2)*Tmat/h
-D2midpoint_ang(body::RigidBody, q1, q2, h) = (@SMatrix zeros(4,4)), 2*Hmat'L(q2)'/h
+D2midpoint_ang(body::RigidBody, q1, q2, h) = (@SMatrix zeros(4,4)), 2*Hmat'L(q1)'/h
 
 function Ld(body, x1, x2, h)
-    h * Lagrangian_dot(body, (x1+x2)/2, (x2-x1)/h)
+    r1,r2 = gettran(body, x1), gettran(body, x2)
+    q1,q2 = getquat(body, x1), getquat(body, x2)
+    r,ν = midpoint_lin(body, r1, r2, h)
+    q,ω = midpoint_rot(body, q1, q2, h)
+    x = [r; q]
+    v = [ν; ω]
+    h * Lagrangian(body, x, v) 
 end
 
 function D1Ld(body, x1, x2, h)
-    xmid = (x1 + x2)/2
-    ẋmid = (x2 - x1)/h
-    h/2 * D1L_dot(body,xmid,ẋmid) - D2L_dot(body,xmid,ẋmid)
+    r1,r2 = gettran(body, x1), gettran(body, x2)
+    q1,q2 = getquat(body, x1), getquat(body, x2)
+    r,ν = midpoint_lin(body, r1, r2, h)
+    q,ω = midpoint_rot(body, q1, q2, h)
+    x = [r; q]
+    v = [ν; ω]
+
+    dr,dν = D1midpoint_lin(body, r1, r2, h) 
+    dq,dω = D1midpoint_ang(body, q1, q2, h)
+    dx = blockdiag(dr, dq)
+    dv = blockdiag(dν, dω)
+
+    h * (dx'D1L(body, x, v) + dv'D2L(body, x, v))
 end
 
 function D2Ld(body, x1, x2, h)
-    xmid = (x1 + x2)/2
-    ẋmid = (x2 - x1)/h
-    h/2 * D1L_dot(body,xmid,ẋmid) + D2L_dot(body,xmid,ẋmid)
+    r1,r2 = gettran(body, x1), gettran(body, x2)
+    q1,q2 = getquat(body, x1), getquat(body, x2)
+    r,ν = midpoint_lin(body, r1, r2, h)
+    q,ω = midpoint_rot(body, q1, q2, h)
+    x = [r; q]
+    v = [ν; ω]
+
+    dr,dν = D2midpoint_lin(body, r1, r2, h) 
+    dq,dω = D2midpoint_ang(body, q1, q2, h)
+    dx = blockdiag(dr, dq)
+    dv = blockdiag(dν, dω)
+
+    h * (dx'D1L(body, x, v) + dv'D2L(body, x, v))
 end
 
 #############################################
@@ -108,7 +136,7 @@ function DEL(body, x1, x2, x3, F1, F2, h)
     r2,q2 = x2[ri], x2[qi]
     r3,q3 = x3[ri], x3[qi]
     G2 = L(q2)*Hmat
-    DELr = mass*(r2-r1)/h - mass*(r3-r2)*h
+    DELr = mass*(r2-r1)/h - mass*(r3-r2)/h
     DELq = (2/h) * G2'L(q1)*Hmat*J * Hmat'L(q1)'q2 + (2/h) * G2'Tmat*R(q3)'Hmat*J*Hmat'L(q2)'q3
     [DELr; DELq] + h*(F1+F2)/2
 end
@@ -179,11 +207,13 @@ function simulate(body::RigidBody, params::SimParams, F, x0; newton_iters=20, to
             end
             H = D3_DEL(body, X[k-1], X[k], X[k+1], F[k-1],F[k], h)
             Δ = -(H\e)
-            Δr = Δ[SA[1,2,3]]
-            ϕ = Δ[SA[4,5,6]]  # delta rotation
-            Δq = SA[sqrt(1-ϕ'ϕ), ϕ[1], ϕ[2], ϕ[3]]
-            Δx = [Δr; Δq]
-            X[k+1] = compose_states(X[k+1], Δx)
+            dx = err2fullstate(Δ)
+            X[k+1] = compose_states(X[k+1], dx)
+            # Δr = Δ[SA[1,2,3]]
+            # ϕ = Δ[SA[4,5,6]]  # delta rotation
+            # Δq = SA[sqrt(1-ϕ'ϕ), ϕ[1], ϕ[2], ϕ[3]]
+            # Δx = [Δr; Δq]
+            # X[k+1] = compose_states(X[k+1], Δx)
 
             if i == newton_iters
                 @warn "Newton failed to converge within $i iterations at timestep $k"
