@@ -43,12 +43,12 @@ Jacobian of `G(q)'b` wrt quaternion `q`, and `b` has length 4.
 function ∇G(q, b)
     # I3 = SA[1 0 0; 0 1 0; 0 0 1]
     # return -I3 * (q'b)
-    Hmat'R(b)*Tmat
+    Hmat'R(b)*Tmat/2
 end
 
 function ∇G2(q, b)
     I3 = SA[1 0 0; 0 1 0; 0 0 1]
-    return -I3 * (q'b)
+    return -I3 * (q'b/4)
     # Hmat'R(b)*Tmat
 end
 

@@ -11,7 +11,10 @@ const MC = MCTrajOpt
 ## Check the attitude Jacobian
 q0 = normalize(@SVector randn(4))
 g = zeros(3)
-ForwardDiff.jacobian(g->MC.L(q0)*MC.cayleymap(g), g) ≈ MC.G(q0)
+@test ForwardDiff.jacobian(g->MC.L(q0)*MC.cayleymap(g), g) ≈ MC.G(q0)
+
+b = randn(4)
+@test ForwardDiff.hessian(g->(MC.L(q0)*MC.cayleymap(g))'b, g) ≈ -b'q0 / 4 * I(3)
 
 ##
 r0 = @SVector randn(3)

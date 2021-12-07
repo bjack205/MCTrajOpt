@@ -143,7 +143,7 @@ function D1Ld!(model::DoublePendulum, y, x1, x2, h)
         q1, q2 = getquat(model, x1, j), getquat(model, x2, j)
         
         y[ir] .+= -m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= SCALING/h * G(q1)'Tmat*R(q2)'Hmat * J * Hmat'L(q1)'q2
+        y[iq] .+= 4/h * G(q1)'Tmat*R(q2)'Hmat * J * Hmat'L(q1)'q2
         ir = ir .+ 6
         iq = iq .+ 6
     end
@@ -162,9 +162,9 @@ function D1Ld(model::DoublePendulum, x1, x2, h)
     g = model.gravity
     [
         -m_1/h * (r2_1-r1_1) - h*m_1*g*SA[0,0,1]/2
-        SCALING/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1
+        4/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1
         -m_2/h * (r2_2-r1_2) - h*m_2*g*SA[0,0,1]/2
-        SCALING/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'q2_2
+        4/h * G(q1_2)'Tmat*R(q2_2)'Hmat * J_2 * Hmat'L(q1_2)'q2_2
     ]
 end
 
@@ -217,7 +217,7 @@ function D2Ld!(model::DoublePendulum, y, x1, x2, h)
         q1, q2 = getquat(model, x1, j), getquat(model, x2, j)
         
         y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= SCALING/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
+        y[iq] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
         ir = ir .+ 6
         iq = iq .+ 6
     end
@@ -234,12 +234,12 @@ function D2Ld(model::DoublePendulum, x1, x2, h)
     q1_1, q1_2 = getquat(model, x1)
     q2_1, q2_2 = getquat(model, x2)
     g = model.gravity
-    s = SCALING
+    # s = SCALING
     [
         m_1/h * (r2_1-r1_1) - h*m_1*g*SA[0,0,1]/2
-        s/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1
+        4/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1
         m_2/h * (r2_2-r1_2) - h*m_2*g*SA[0,0,1]/2
-        s/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'q2_2
+        4/h * G(q2_2)'L(q1_2)*Hmat * J_2 * Hmat'L(q1_2)'q2_2
     ]
 end
 
@@ -391,17 +391,19 @@ function DEL(model::DoublePendulum, x1, x2, x3, λ, F1, F2, h)
         h*errstate_jacobian(model, x2)'∇joint_constraints(model, x2)'λ
 end
 
-function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h)
-    @. y = h*(F1 + F2)/2
+function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
+    nL = 2
+    yview = view(y, (1:6*nL) .+ (yi-1))
+    @. yview = h*(F1 + F2)/2
     # D2Ld!(model, y, x1, x2, h)
     # D1Ld!(model, y, x2, x3, h)
     # jtvp_joint_constraints!(model, y, x2, λ)
 
-    ir = 1:3
-    iq = 4:6
+    ir = (1:3) .+ (yi-1)
+    iq = (4:6) .+ (yi-1)
     p = 5
     g = model.gravity
-    for j = 1:2
+    for j = 1:nL
         body = j == 1 ? model.b1 : model.b2
         m, J = body.mass, body.J
         r1, r2, r3, = gettran(model, x1, j), gettran(model, x2, j), gettran(model, x3, j)
@@ -409,11 +411,11 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h)
         
         # D1Ld
         y[ir] .+= -m/h * (r3 - r2) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= SCALING/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
+        y[iq] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
 
         # D2Ld
         y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= SCALING/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
+        y[iq] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
 
         # Joint constraints
         joint = j == 1 ? model.joint0 : model.joint1

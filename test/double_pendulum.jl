@@ -119,11 +119,24 @@ G = MC.errstate_jacobian(model, xtest)
 F1 = SA[0,0,0, 0,0,-1, 0,0,0, 0,0,1]
 F2 = copy(F1)
 λ = @SVector zeros(10)
+λtest = @SVector randn(10)
 x3test = x2test ⊕ dx 
 MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
 del = zeros(12)
 MC.DEL!(model, del, x1test, x2test, x3test, λ, F1, F2, h)
-del ≈ MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
+@test del ≈ MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
+
+jac1 = zero(Matrix(jac0))
+jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x, x2test, x3test, λtest, F1, F2, h), x1test)
+ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x, x2test, x3test, λtest, F1, F2, h), del, x1test)
+@test jac1 ≈ jac0
+
+jac1 = zero(Matrix(jac0))
+jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x1test, x, x3test, λtest, F1, F2, h), x2test)
+ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x1test, x, x3test, λtest, F1, F2, h), del, x2test)
+jac1
+jac0
+@test jac1 ≈ jac0
 
 
 e = zeros(24)

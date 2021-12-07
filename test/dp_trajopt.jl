@@ -28,7 +28,7 @@ model = DoublePendulum(body1, body2, gravity = false)
 # Generate target trajectory
 opt = SimParams(1.0, 0.05)
 opt.N
-control(t) = SA[1.0 * (t > 0.5), cos(pi*t)*4]
+control(t) = SA[0.5 * (t > 0.5), cos(pi*t)*2]
 U = control.(opt.thist)
 x0 = MC.min2max(model, [0.0,0])
 Xref = MC.simulate(model, opt, U, x0)
@@ -90,8 +90,10 @@ end
 J = MOI.eval_objective(prob, ztest)
 MOI.eval_objective_gradient(prob, grad_f, z0)
 MOI.eval_constraint(prob, c, z0)
+c0 = copy(c)
 
 MOI.eval_constraint_jacobian(prob, jac, z0)
+c0 .= 0
 FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), z0)
 @test sparse(row, col, jac, prob.m_nlp, prob.n_nlp) ≈ jac0
 # @test c[end-2:end] ≈ zeros(3)
