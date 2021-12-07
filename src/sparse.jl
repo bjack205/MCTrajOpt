@@ -81,20 +81,28 @@ mutable struct BlockViews
     blk2vec::Dict{BlockID,UnitRange{Int}}
     vec2blk::OrderedDict{UnitRange{Int},BlockID}
     len::Int
+    initializing::Bool
     function BlockViews(m::Int, n::Int)
-        new(m, n, Dict{BlockID,UnitRange{Int}}(), OrderedDict{UnitRange{Int},BlockID}(), 0)
+        new(m, n, Dict{BlockID,UnitRange{Int}}(), OrderedDict{UnitRange{Int},BlockID}(), 0, false)
     end
 end
 
 getblock(blocks::BlockViews, v::AbstractVector, i1, i2) = getblock(blocks, v, BlockID(i1, i2))
 
 function getblock(blocks::BlockViews, v::AbstractVector, block::BlockID)
-    vecview = view(v, blocks.blk2vec[block])
+    if blocks.initializing
+        setblock!(blocks, block)
+        v = zeros(length(block))   # initialize a temporary array while initializing
+        vecview = view(v, 1:length(block))
+    else
+        vecview = view(v, blocks.blk2vec[block])
+    end
     reshape(vecview, block.m, block.n)
 end
 
-function setblock!(blocks::BlockViews, i1::AbstractVector, i2::AbstractVector)
-    block = BlockID(i1, i2)
+setblock!(blocks::BlockViews, i1::AbstractVector, i2::AbstractVector) = 
+    setblock!(blocks, BlockID(i1, i2)) 
+function setblock!(blocks::BlockViews, block::BlockID)
     if !haskey(blocks.blk2vec, block)
         inds = blocks.len .+ (1:length(block))
         blocks.blk2vec[block] = inds

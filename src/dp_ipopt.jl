@@ -80,6 +80,13 @@ function initialize_sparsity!(prob::DoublePendulumMOI)
 
     off = 0
 
+    jac = NonzerosVector(zeros(0), blocks)
+    z = ones(prob.n_nlp)
+    blocks.initializing = true
+    MOI.eval_constraint_jacobian(prob, jac, z)
+    blocks.initializing = false 
+    return
+
     # Discrete Euler-Lagrange (dynamics) constraints
     ci = 1:6*prob.L
     for (i,k) in enumerate(2:prob.N-1)
@@ -185,6 +192,7 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
         # Compute the Discrete Euler-Lagrange constraint
         λ = z[λinds[i]]
         c[ci] = DEL(prob.model, x1, x2, x3, λ, F1, F2, h)
+        # DEL!(prob.model, c, x1, x2, x3, λ, F1, F2, h, yi=ci[1])
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L
