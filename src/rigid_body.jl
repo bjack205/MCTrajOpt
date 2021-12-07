@@ -45,7 +45,7 @@ function Lagrangian(body, x, ν)
     M = mass_matrix(body)
     T = 1/2 * ν'M*ν
     U = 0.0
-    return T - U
+    return T - U + ξ'x
 end
 
 function Lagrangian_dot(body, x, xdot)
@@ -125,7 +125,7 @@ end
 # Discrete Euler-Lagrange
 #############################################
 
-function DEL(body, x1, x2, x3, F1, F2, h)
+function DEL(body, x1, x2, x3, ξ1, ξ2, h)
     # scaling = Diagonal(SA[1,1,1,0.5,0.5,0.5])
     # scaling * errstate_jacobian(body, x2)'*(D2Ld(body,x1,x2,h) + D1Ld(body,x2,x3,h)) + h * (F1+F2)/2
     mass = body.mass

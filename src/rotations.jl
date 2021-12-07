@@ -46,10 +46,30 @@ function ∇G(q, b)
     Hmat'R(b)*Tmat/2
 end
 
-function ∇G2(q, b)
+∇G2(q, b) = ∇G2(q, b, Val(true))
+function ∇G2(q, b, ::Val{true})
     I3 = SA[1 0 0; 0 1 0; 0 0 1]
     return -I3 * (q'b/4)
-    # Hmat'R(b)*Tmat
+end
+
+function ∇G2(q, b, ::Val{false})
+    return Hmat'R(b)*Tmat/2
+end
+
+function ∇²err(hess, grad, q1, q2, ::Val{true})
+    ehess = G(q1)'hess*G(q2)
+    if q1 === q2
+        ehess += ∇G2(q1, grad, Val(true))
+    end
+    return ehess
+end
+
+function ∇²err(hess, grad, q1, q2, ::Val{false})
+    ehess = G(q1)'hess
+    if q1 === q2
+        ehess += ∇G2(q1, grad, Val(false))
+    end
+    return ehess
 end
 
 function compose_states(x1,x2)

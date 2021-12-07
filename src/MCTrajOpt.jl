@@ -8,8 +8,8 @@ export RigidBody, SimParams
 export mass_matrix,
        kinematics, inv_kinematics, D1K, D2K, D1Kinv, D2Kinv,
        min2max,
-       Lagrangian_vel, D1L_vel, D2L_vel,
-       Lagrangian_dot, D1L_dot, D2L_dot,
+       Lagrangian, D1L, D2L,
+    #    Lagrangian_dot, D1L_dot, D2L_dot,
        Ld, D1Ld, D2Ld,
        DEL, D3_DEL,
        simulate

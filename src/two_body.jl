@@ -57,6 +57,27 @@ function jtvp_joint_constraint(joint::RevoluteJoint, r_1, q_1, r_2, q_2, λ)
     return dr_1, dq_1, dr_2, dq_2
 end
 
+function ∇²joint_constraint(joint::RevoluteJoint, r_1, q_1, r_2, q_2, λ)
+    λt = λ[SA[1,2,3]]
+    λa = λ[SA[4,5]]
+    dq_11 = ∇²rot(q_1, joint.p1, λt)
+    dq_12 = Tmat*L(joint.orth'λa)*Tmat
+    dq_21 = R(joint.orth'λa)
+    dq_22 = -∇²rot(q_2, joint.p2, λt)
+    return dq_11, dq_12, dq_21, dq_22
+end
+
+function ∇²joint_constraint!(joint::RevoluteJoint, jac, r_1, q_1, r_2, q_2, λ)
+    dq_11, dq_12, dq_21, dq_22 = ∇²joint_constraint(joint, r_1, q_1, r_2, q_2, λ)
+    iq_1 = 4:7
+    iq_2 = iq_1 .+ 7
+    jac[iq_1, iq_1] .+= dq_11
+    jac[iq_1, iq_2] .+= dq_12
+    jac[iq_2, iq_1] .+= dq_21
+    jac[iq_2, iq_2] .+= dq_22
+    jac
+end
+
 function joint_kinematics(joint::RevoluteJoint, r_1, q_1, θ)
     q12 = expm(Amat(q_1)*joint.axis * θ)
     q_2 = L(q12)*q_1
@@ -102,6 +123,9 @@ function splitstate(model::TwoBody, x)
     inds = SVector{7}(1:7)
     x[inds], x[inds .+ 7]
 end
+
+getrind(body::TwoBody, j) = SA[1,2,3] .+ (j-1)*7
+getqind(body::TwoBody, j) = SA[4,5,6,7] .+ (j-1)*7
 
 gettran(body::TwoBody, x) = x[SA[1,2,3]], x[SA[8,9,10]]
 gettran(body::TwoBody, x, j) = j == 0 ? basetran(body) : x[SA[1,2,3] .+ (j-1)*7]

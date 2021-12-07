@@ -369,6 +369,42 @@ function jtvp_joint_constraints(model::DoublePendulum, x, λ)
     return [dr_1; dq_1; dr_2; dq_2]
 end
 
+function ∇²joint_constraints!(model::DoublePendulum, hess, x, λ; errstate=Val(false))
+    ir_1 = (1:3) .- 6
+    iϕ_1 = (4:6) .- 6
+    p = 5
+    for j = 1:2
+        ir_2 = ir_1 .+ 6
+        iϕ_2 = iϕ_1 .+ 6
+        if errstate == Val(true)
+            iq_1 = iϕ_1
+            iq_2 = iϕ_2
+        else
+            iq_1 = (4:7) .+ (j-2)*7
+            iq_2 = (4:7) .+ (j-1)*7
+        end
+
+        ci = (1:p) .+ (j-1)*p
+        joint = j == 1 ? model.joint0 : model.joint1
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        λj = view(λ, ci)
+
+        dq_11, dq_12, dq_21, dq_22 = ∇²joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
+        dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
+        if ir_1[1] > 0 
+            hess[iϕ_1, iq_1] .+= ∇²err(dq_11, dq_1, q_1, q_1, errstate) 
+            hess[iϕ_1, iq_2] .+= ∇²err(dq_12, dq_1, q_1, q_2, errstate) 
+            hess[iϕ_2, iq_1] .+= ∇²err(dq_21, dq_2, q_2, q_1, errstate) 
+        end
+        hess[iϕ_2, iq_2] .+= ∇²err(dq_22, dq_2, q_2, q_2, errstate) 
+
+        ir_1 = ir_1 .+ 6
+        iϕ_1 = iϕ_1 .+ 6
+    end
+    hess
+end
+
 function ∇²joint_constraints(model::DoublePendulum, x, λ)
     r_1, r_2 = gettran(model, x)
     q_1, q_2 = getquat(model, x)
@@ -398,6 +434,7 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
     # D2Ld!(model, y, x1, x2, h)
     # D1Ld!(model, y, x2, x3, h)
     # jtvp_joint_constraints!(model, y, x2, λ)
+    # y .*= h
 
     ir = (1:3) .+ (yi-1)
     iq = (4:6) .+ (yi-1)
@@ -417,9 +454,10 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
         y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
         y[iq] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
 
+        # @goto loopctr
         # Joint constraints
         joint = j == 1 ? model.joint0 : model.joint1
-        ir_1 = ir .- 6
+        ir_1 = ir .- 6  # assumes DEL constraint is consecutive
         iq_1 = iq .- 6
         ir_2 = ir
         iq_2 = iq
@@ -431,15 +469,106 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
         λj = view(λ, ci)
         dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
         if ir_1[1] > 0 
-            y[ir_1] .+= dr_1
-            y[iq_1] .+= G(q_1)'dq_1
+            y[ir_1] .+= h*dr_1
+            y[iq_1] .+= h*G(q_1)'dq_1
         end
-        y[ir_2] .+= dr_2
-        y[iq_2] .+= G(q_2)'dq_2
+        y[ir_2] .+= h*dr_2
+        y[iq_2] .+= h*G(q_2)'dq_2
+
+        @label loopctr
+        ir = ir .+ 6
+        iq = iq .+ 6
+    end
+end
+
+function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h; 
+    ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16
+)
+    # @. y = h*(F1 + F2)/2
+    # D2Ld!(model, y, x1, x2, h)
+    # D1Ld!(model, y, x2, x3, h)
+    # jtvp_joint_constraints!(model, y, x2, λ)
+    # Jcon = errstate_jacobian(model, x2)'∇²joint_constraints(model, x2, λ) + 
+    #     ∇errstate_jacobian(model, x2, jtvp_joint_constraints(model, x2, λ))
+    # jac_x2 = view(jac, :, ix2)
+    # ∇²joint_constraints!(model, jac_x2, x2, λ, errstate=Val(false))
+    # jac_x2 .*= h
+
+    # Joint Constraints
+    hess = jac
+    x = x2
+    errstate = Val(false)
+    ir_1 = (1:3) .- 6
+    iϕ_1 = (4:6) .- 6
+    p = 5
+    for j = 1:2
+        ir_2 = ir_1 .+ 6
+        iϕ_2 = iϕ_1 .+ 6
+        if errstate == Val(true)
+            iq_1 = iϕ_1
+            iq_2 = iϕ_2
+        else
+            iq_1 = (4:7) .+ (j-2)*7 .+ (ix2[1] - 1)
+            iq_2 = (4:7) .+ (j-1)*7 .+ (ix2[1] - 1)
+        end
+
+        ci = (1:p) .+ (j-1)*p
+        joint = j == 1 ? model.joint0 : model.joint1
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        λj = view(λ, ci)
+
+        dq_11, dq_12, dq_21, dq_22 = ∇²joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
+        dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
+        if ir_1[1] > 0 
+            hess[iϕ_1, iq_1] .+= ∇²err(dq_11, dq_1, q_1, q_1, errstate) 
+            hess[iϕ_1, iq_2] .+= ∇²err(dq_12, dq_1, q_1, q_2, errstate) 
+            hess[iϕ_2, iq_1] .+= ∇²err(dq_21, dq_2, q_2, q_1, errstate) 
+        end
+        hess[iϕ_2, iq_2] .+= ∇²err(dq_22, dq_2, q_2, q_2, errstate) 
+
+        ir_1 = ir_1 .+ 6
+        iϕ_1 = iϕ_1 .+ 6
+    end
+    jac_x2 = view(jac, :, ix2)
+    jac_x2 .*= h
+
+
+    # Discrete Legendre Transforms
+    ir = 1:3
+    iq = 4:6
+    p = 5
+    g = model.gravity
+    for j = 1:2
+        body = j == 1 ? model.b1 : model.b2
+        m, J = body.mass, body.J
+        r1, r2, r3,   = gettran(model, x1, j), gettran(model, x2, j), gettran(model, x3, j)
+        q1, q2, q3,   = getquat(model, x1, j), getquat(model, x2, j), getquat(model, x3, j)
+        ir1, iq1 = ix1[getrind(model, j)], ix1[getqind(model, j)]
+        ir2, iq2 = ix2[getrind(model, j)], ix2[getqind(model, j)]
+        ir3, iq3 = ix3[getrind(model, j)], ix3[getqind(model, j)]
+        
+        # D1Ld
+        jac[ir, ir2] .+= +m/h * I3
+        jac[ir, ir3] .+= -m/h * I3
+        jac[iq, iq2] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'R(q3)*Tmat + 
+            4/h * ∇G(q2, Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3)
+        jac[iq, iq3] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)' + 
+            4/h * G(q2)'Tmat*L(Hmat * J * Hmat'L(q2)'q3) * Tmat
+
+        # D2Ld
+        jac[ir, ir1] .+= -m/h * I3
+        jac[ir, ir2] .+= +m/h * I3
+        jac[iq, iq1] .+= 4/h * G(q2)'R(Hmat * J * Hmat'L(q1)'q2) + 
+            4/h * G(q2)'L(q1)*Hmat * J * Hmat'R(q2)*Tmat
+        jac[iq, iq2] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)' + 
+            4/h * ∇G(q2, L(q1)*Hmat * J * Hmat'L(q1)'q2)
 
         ir = ir .+ 6
         iq = iq .+ 6
     end
+
+    return
 end
 
 function ∇DEL(model::DoublePendulum, x1, x2, x3, λ, F1, F2,h)

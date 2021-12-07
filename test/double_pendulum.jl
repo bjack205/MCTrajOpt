@@ -100,12 +100,14 @@ c0 = zeros(10)
 @test MC.∇joint_constraints(model, xtest) ≈ 
     ForwardDiff.jacobian(x->MC.joint_constraints(model, x), xtest)
 
+# Jacobian-transpose vector product
 λtest = @SVector randn(10)
 @test MC.jtvp_joint_constraints(model, xtest, λtest) ≈ MC.∇joint_constraints(model, xtest)'λtest
 jtvp = zeros(12)
 MC.jtvp_joint_constraints!(model, jtvp, xtest, λtest)
 @test jtvp ≈ MC.errstate_jacobian(model, xtest)'MC.∇joint_constraints(model, xtest)'λtest
 
+# Jacobian of Jtvp
 @test MC.∇²joint_constraints(model, xtest, λtest) ≈ 
     FiniteDiff.finite_difference_hessian(x->MC.joint_constraints(model, x)'λtest, xtest) atol=1e-6
 
@@ -114,6 +116,17 @@ ehess = FiniteDiff.finite_difference_hessian(e->MC.joint_constraints(model, xtes
 G = MC.errstate_jacobian(model, xtest)
 @test ehess ≈ G'MC.∇²joint_constraints(model, xtest, λtest)*G + 
     MC.∇errstate_jacobian2(model, xtest, MC.jtvp_joint_constraints(model, xtest, λtest)) atol=1e-6
+
+# diff against error quaternion
+chess = zeros(12,12)
+MC.∇²joint_constraints!(model, chess, xtest, λtest, errstate=Val(true))
+@test chess ≈ ehess atol=1e-6
+
+# diff against quaternion
+chess = zeros(12,14)
+MC.∇²joint_constraints!(model, chess, xtest, λtest)
+@test chess ≈ 
+    ForwardDiff.jacobian(x->MC.errstate_jacobian(model, x)'MC.jtvp_joint_constraints(model, x, λtest), xtest)
 
 # DEL
 F1 = SA[0,0,0, 0,0,-1, 0,0,0, 0,0,1]
@@ -131,13 +144,35 @@ jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x, x2test, x3test, λtest, F1, F2, 
 ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x, x2test, x3test, λtest, F1, F2, h), del, x1test)
 @test jac1 ≈ jac0
 
-jac1 = zero(Matrix(jac0))
 jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x1test, x, x3test, λtest, F1, F2, h), x2test)
+jac1 = zero(Matrix(jac0))
 ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x1test, x, x3test, λtest, F1, F2, h), del, x2test)
-jac1
-jac0
 @test jac1 ≈ jac0
 
+MC.DEL!(model, del, x1test, x2test, x3test, λtest, F1, F2, h)
+del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, F1, F2, h)
+
+##
+ix1 = 1:14
+ix2 = ix1 .+ 16
+ix3 = ix2 .+ 16
+iq2_1 = ix2[4:7]
+iq2_2 = ix2[(4:7) .+ 7]
+iq3_1 = ix3[4:7]
+iq3_2 = ix3[(4:7) .+ 7]
+
+jac = zeros(12,16*3-2)
+jac0 = zero(jac)
+delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
+delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
+
+jac1 = FiniteDiff.finite_difference_jacobian(delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
+FiniteDiff.finite_difference_jacobian!(jac0, delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
+MC.∇DEL!(model, jac, x1test, x2test, x3test, λtest, F1, F2, h)
+@test jac1 ≈ jac0
+@test jac ≈ jac0
+
+##
 
 e = zeros(24)
 hess = FiniteDiff.finite_difference_hessian(e->MC.discretelagrangian(model, x1test ⊕ e[1:12], x2test ⊕ e[13:24], h), e)
@@ -148,6 +183,8 @@ d11, d12 = MC.∇D1Ld(model, x1test, x2test, h)
 d21, d22 = MC.∇D2Ld(model, x1test, x2test, h)
 @test norm(d21 - hess[13:24,1:12], Inf) < 1e-5
 @test norm(d22 - hess[13:24,13:24], Inf) < 1e-5
+
+
 
 ## Simulation
 sim = SimParams(1.0, 0.01)
