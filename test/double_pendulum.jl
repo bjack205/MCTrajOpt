@@ -128,7 +128,7 @@ MC.∇²joint_constraints!(model, chess, xtest, λtest)
 @test chess ≈ 
     ForwardDiff.jacobian(x->MC.errstate_jacobian(model, x)'MC.jtvp_joint_constraints(model, x, λtest), xtest)
 
-# DEL
+## DEL
 F1 = SA[0,0,0, 0,0,-1, 0,0,0, 0,0,1]
 F2 = copy(F1)
 λ = @SVector zeros(10)
@@ -136,21 +136,21 @@ F2 = copy(F1)
 x3test = x2test ⊕ dx 
 MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
 del = zeros(12)
-MC.DEL!(model, del, x1test, x2test, x3test, λ, F1, F2, h)
-@test del ≈ MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
-
-jac1 = zero(Matrix(jac0))
-jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x, x2test, x3test, λtest, F1, F2, h), x1test)
-ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x, x2test, x3test, λtest, F1, F2, h), del, x1test)
-@test jac1 ≈ jac0
-
-jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x1test, x, x3test, λtest, F1, F2, h), x2test)
-jac1 = zero(Matrix(jac0))
-ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x1test, x, x3test, λtest, F1, F2, h), del, x2test)
-@test jac1 ≈ jac0
-
 MC.DEL!(model, del, x1test, x2test, x3test, λtest, F1, F2, h)
-del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, F1, F2, h)
+@test del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, F1, F2, h)
+
+# jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x, x2test, x3test, λtest, F1, F2, h), x1test)
+# jac1 = zero(Matrix(jac0))
+# ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x, x2test, x3test, λtest, F1, F2, h), del, x1test)
+# @test jac1 ≈ jac0
+
+# jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x1test, x, x3test, λtest, F1, F2, h), x2test)
+# jac1 = zero(Matrix(jac0))
+# ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x1test, x, x3test, λtest, F1, F2, h), del, x2test)
+# @test jac1 ≈ jac0
+
+# MC.DEL!(model, del, x1test, x2test, x3test, λtest, F1, F2, h)
+# @test del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, F1, F2, h)
 
 ##
 ix1 = 1:14
@@ -161,16 +161,30 @@ iq2_2 = ix2[(4:7) .+ 7]
 iq3_1 = ix3[4:7]
 iq3_2 = ix3[(4:7) .+ 7]
 
-jac = zeros(12,16*3-2)
-jac0 = zero(jac)
+jac_ip = zeros(12,16*3-2)
+jac_op = zero(jac)
+jac_an = zero(jac)
 delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
 delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
 
-jac1 = FiniteDiff.finite_difference_jacobian(delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
-FiniteDiff.finite_difference_jacobian!(jac0, delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
-MC.∇DEL!(model, jac, x1test, x2test, x3test, λtest, F1, F2, h)
-@test jac1 ≈ jac0
-@test jac ≈ jac0
+z = [x1test; zeros(2); x2test; zeros(2); x3test]
+delfun(del, z)
+@test delfun(z) ≈ del
+
+jac_op = FiniteDiff.finite_difference_jacobian(delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
+FiniteDiff.finite_difference_jacobian!(jac_ip, delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
+MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, F1, F2, h)
+@test jac_ip ≈ jac_op ≈ jac_an
+
+delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h, yi=13)
+y = zeros(2*length(del))
+delfun2(y, z)
+jac_op = zeros(2*length(del), length(z))
+jac_ip = zero(jac_op)
+FiniteDiff.finite_difference_jacobian!(jac_op, (y,x)->y[13:end] .= delfun(x), z)
+FiniteDiff.finite_difference_jacobian!(jac_ip, (y,x)->delfun2(y,x), z)
+@test jac_op ≈ jac_ip
+@test norm(jac_op[1:12,:],Inf) < 1e-12
 
 ##
 

@@ -132,9 +132,9 @@ end
 
 const SCALING = 2
 
-function D1Ld!(model::DoublePendulum, y, x1, x2, h)
-    ir = 1:3
-    iq = 4:6
+function D1Ld!(model::DoublePendulum, y, x1, x2, h; yi=1)
+    ir = (1:3) .+ (yi-1)
+    iq = (4:6) .+ (yi-1)
     g = model.gravity
     for j = 1:2
         body = j == 1 ? model.b1 : model.b2
@@ -206,9 +206,9 @@ function ∇D1Ld(model::DoublePendulum, x1, x2, h)
     return d1, d2
 end
 
-function D2Ld!(model::DoublePendulum, y, x1, x2, h)
-    ir = 1:3
-    iq = 4:6
+function D2Ld!(model::DoublePendulum, y, x1, x2, h; yi=1)
+    ir = (1:3) .+ (yi-1)
+    iq = (4:6) .+ (yi-1)
     g = model.gravity
     for j = 1:2
         body = j == 1 ? model.b1 : model.b2
@@ -324,9 +324,9 @@ function ∇joint_constraints(model::DoublePendulum, x)
     return [jactran_1; jacaxis_1; jactran_2; jacaxis_2]
 end
 
-function jtvp_joint_constraints!(model::DoublePendulum, y, x, λ)
-    ir_1 = (1:3) .- 6
-    iq_1 = (4:6) .- 6
+function jtvp_joint_constraints!(model::DoublePendulum, y, x, λ; yi=1)
+    ir_1 = (1:3) .- 6 .+ (yi-1)
+    iq_1 = (4:6) .- 6 .+ (yi-1)
     p = 5
     iλt = SA[1,2,3]
     iλa = SA[4,5]
@@ -340,7 +340,7 @@ function jtvp_joint_constraints!(model::DoublePendulum, y, x, λ)
         λj = view(λ, ci)
 
         dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
-        if ir_1[1] > 0 
+        if (ir_1[1] - (yi-1)) > 0 
             y[ir_1] .+= dr_1
             y[iq_1] .+= G(q_1)'dq_1
         end
@@ -428,13 +428,18 @@ function DEL(model::DoublePendulum, x1, x2, x3, λ, F1, F2, h)
 end
 
 function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
+    yview = view(y, (1:12) .+ (yi-1))
+    yview .= 0
+    jtvp_joint_constraints!(model, y, x2, λ, yi=yi)
+    yview .*= h
+    yview .+= h*(F1 + F2)/2
+    D2Ld!(model, y, x1, x2, h, yi=yi)
+    D1Ld!(model, y, x2, x3, h, yi=yi)
+    return
+
     nL = 2
     yview = view(y, (1:6*nL) .+ (yi-1))
     @. yview = h*(F1 + F2)/2
-    # D2Ld!(model, y, x1, x2, h)
-    # D1Ld!(model, y, x2, x3, h)
-    # jtvp_joint_constraints!(model, y, x2, λ)
-    # y .*= h
 
     ir = (1:3) .+ (yi-1)
     iq = (4:6) .+ (yi-1)
@@ -447,6 +452,8 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
         q1, q2, q3, = getquat(model, x1, j), getquat(model, x2, j), getquat(model, x3, j)
         
         # D1Ld
+        @show ir
+        @show iq
         y[ir] .+= -m/h * (r3 - r2) - h*m*g*SA[0,0,1]/2
         y[iq] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
 
@@ -468,7 +475,7 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
 
         λj = view(λ, ci)
         dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
-        if ir_1[1] > 0 
+        if (ir_1[1] - yi) > 0 
             y[ir_1] .+= h*dr_1
             y[iq_1] .+= h*G(q_1)'dq_1
         end
