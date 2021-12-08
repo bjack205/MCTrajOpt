@@ -41,7 +41,7 @@ q_2 = MC.getquat(model, xgoal)[2]
 p_ee = SA[0,0,0.5]
 r_ee = r_2 + MC.Amat(q_2)*p_ee
 
-## Set up the problems
+# Set up the problems
 Qr = Diagonal(SA_F64[1,1,1.])
 Qq = Diagonal(SA_F64[1,1,1,1.])
 R = Diagonal(SA_F64[1e-3, 1e-3])

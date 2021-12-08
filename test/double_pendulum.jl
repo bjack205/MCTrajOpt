@@ -161,7 +161,7 @@ del = zeros(12)
 MC.DEL!(model, del, x1test, x2test, x3test, λtest, u1test, u2test, h)
 @test del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, u1test, u2test, h)
 
-##
+## Jacobian of DEL
 ix1 = 1:14
 iu1 = 15:16
 ix2 = ix1 .+ 16

@@ -260,12 +260,15 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
 
         # Compute the Discrete Euler-Lagrange constraint
         λ2 = z[λinds[i]]
-        J0[ci, xinds[k-1]] = ForwardDiff.jacobian(x->con(x, x2, x3, u1, u2, λ2), x1)
-        J0[ci, xinds[k]]   = ForwardDiff.jacobian(x->con(x1, x, x3, u1, u2, λ2), x2)
-        J0[ci, xinds[k+1]] = ForwardDiff.jacobian(x->con(x1, x2, x, u1, u2, λ2), x3)
-        J0[ci, uinds[k-1]] = ForwardDiff.jacobian(u->con(x1, x2, x3, u, u2, λ2), u1)
-        J0[ci, uinds[k]]   = ForwardDiff.jacobian(u->con(x1, x2, x3, u1, u, λ2), u2)
-        J0[ci, λinds[i]]   = ForwardDiff.jacobian(λ->con(x1, x2, x3, u1, u2, λ), λ2)
+        ∇DEL!(prob.model, J0, x1, x2, x3, λ2, u1, u2, h, 
+            ix1=xinds[k-1], ix2=xinds[k], ix3=xinds[k+1], iu1=uinds[k-1], iu2=uinds[k], yi=ci[1])
+        # J0[ci, xinds[k-1]] = ForwardDiff.jacobian(x->con(x, x2, x3, u1, u2, λ2), x1)
+        # J0[ci, xinds[k]]   = ForwardDiff.jacobian(x->con(x1, x, x3, u1, u2, λ2), x2)
+        # J0[ci, xinds[k+1]] = ForwardDiff.jacobian(x->con(x1, x2, x, u1, u2, λ2), x3)
+        # J0[ci, uinds[k-1]] = ForwardDiff.jacobian(u->con(x1, x2, x3, u, u2, λ2), u1)
+        # J0[ci, uinds[k]]   = ForwardDiff.jacobian(u->con(x1, x2, x3, u1, u, λ2), u2)
+        # J0[ci, λinds[i]]   = ForwardDiff.jacobian(λ->con(x1, x2, x3, u1, u2, λ), λ2)
+        J0[ci, λinds[i]]   = h*errstate_jacobian(prob.model, x2)'∇joint_constraints(prob.model, x2)'
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L

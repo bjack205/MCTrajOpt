@@ -652,7 +652,6 @@ function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi
         iq_2 = (4:7) .+ (j-1)*7 .+ (ix[1] - 1)
 
         if (iF_1[1] - (yi-1)) > 0
-            println("Past 1st row")
             F_11 = ∇force11(joint, r_1, q_1, r_2, q_2, u[j])
             @view(jac[iF_1, ir_1]) .+= F_11[1] * s
             @view(jac[iF_1, iq_1]) .+= F_11[2] * s
@@ -676,7 +675,6 @@ function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi
             @view(jac[iT_1, iu_j]) .+= T_1u * s
         end
         if (ir_1[1] - (ix[1] - 1)) > 0
-            println("Past 1st column")
             F_21 = ∇force21(joint, r_1, q_1, r_2, q_2, u[j])
             @view(jac[iF_2, ir_1]) .+= F_21[1] * s
             @view(jac[iF_2, iq_1]) .+= F_21[2] * s
