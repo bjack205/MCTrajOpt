@@ -626,6 +626,95 @@ function getwrenches(model::DoublePendulum, x, u)
     return [ξ0_1 + ξ1_1; ξ1_2]
 end
 
+function getwrenches!(model::DoublePendulum, ξ, x, u; yi=1)
+    for j = 1:2
+        joint = j == 1 ? model.joint0 : model.joint1
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        iF_1 = (1:3) .+ (j-2)*6  .+ (yi-1)
+        iT_1 = (4:6) .+ (j-2)*6  .+ (yi-1)
+        iF_2 = (1:3) .+ (j-1)*6  .+ (yi-1)
+        iT_2 = (4:6) .+ (j-1)*6  .+ (yi-1)
+
+        F_1, T_1 = wrench1(joint, r_1, q_1, r_2, q_2, u[j]) 
+        F_2, T_2 = wrench2(joint, r_1, q_1, r_2, q_2, u[j]) 
+        if (iF_1[1] - (yi-1)) > 0
+            ξ[iF_1] .+= F_1
+            ξ[iT_1] .+= T_1
+        end
+        ξ[iF_2] .+= F_2
+        ξ[iT_2] .+= T_2
+    end
+    return ξ
+end
+
+function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi=1, s=1.0)
+    for j = 1:2
+        joint = j == 1 ? model.joint0 : model.joint1
+        iu_j = iu[j]:iu[j]
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        iF_1 = (1:3) .+ (j-2)*6 .+ (yi-1)
+        iT_1 = (4:6) .+ (j-2)*6 .+ (yi-1)
+        iF_2 = (1:3) .+ (j-1)*6 .+ (yi-1)
+        iT_2 = (4:6) .+ (j-1)*6 .+ (yi-1)
+
+        ir_1 = (1:3) .+ (j-2)*7 .+ (ix[1] - 1)
+        iq_1 = (4:7) .+ (j-2)*7 .+ (ix[1] - 1)
+        ir_2 = (1:3) .+ (j-1)*7 .+ (ix[1] - 1)
+        iq_2 = (4:7) .+ (j-1)*7 .+ (ix[1] - 1)
+
+        if (iF_1[1] - (yi-1)) > 0
+            println("Past 1st row")
+            F_11 = ∇force11(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iF_1, ir_1]) .+= F_11[1] * s
+            @view(jac[iF_1, iq_1]) .+= F_11[2] * s
+
+            F_12 = ∇force12(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iF_1, ir_2]) .+= F_12[1] * s
+            @view(jac[iF_1, iq_2]) .+= F_12[2] * s
+
+            F_1u = ∇force1u(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iF_1, iu_j]) .+= F_1u * s
+
+            T_11 = ∇torque11(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iT_1, ir_1]) .+= T_11[1] * s
+            @view(jac[iT_1, iq_1]) .+= T_11[2] * s
+
+            T_12 = ∇torque12(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iT_1, ir_2]) .+= T_12[1] * s
+            @view(jac[iT_1, iq_2]) .+= T_12[2] * s
+
+            T_1u = ∇torque1u(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iT_1, iu_j]) .+= T_1u * s
+        end
+        if (ir_1[1] - (ix[1] - 1)) > 0
+            println("Past 1st column")
+            F_21 = ∇force21(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iF_2, ir_1]) .+= F_21[1] * s
+            @view(jac[iF_2, iq_1]) .+= F_21[2] * s
+
+            T_21 = ∇torque21(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iT_2, ir_1]) .+= T_21[1] * s
+            @view(jac[iT_2, iq_1]) .+= T_21[2] * s
+        end
+        F_22 = ∇force22(joint, r_1, q_1, r_2, q_2, u[j])
+        @view(jac[iF_2, ir_2]) .+= F_22[1] * s
+        @view(jac[iF_2, iq_2]) .+= F_22[2] * s
+
+        F_2u = ∇force2u(joint, r_1, q_1, r_2, q_2, u[j])
+        @view(jac[iF_2, iu_j]) .+= F_2u * s
+
+        T_22 = ∇torque22(joint, r_1, q_1, r_2, q_2, u[j])
+        @view(jac[iT_2, ir_2]) .+= T_22[1] * s
+        @view(jac[iT_2, iq_2]) .+= T_22[2] * s
+
+        T_2u = ∇torque2u(joint, r_1, q_1, r_2, q_2, u[j])
+        @view(jac[iT_2, iu_j]) .+= T_2u * s
+    end
+    return jac
+end
+
 function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
     X = [zero(x0) for k = 1:params.N]
     X[1] = x0

@@ -33,21 +33,15 @@ U = control.(opt.thist)
 x0 = MC.min2max(model, [0.0,0])
 Xref = MC.simulate(model, opt, U, x0)
 
-# Visualizer
-if !isdefined(Main, :vis)
-    vis = launchvis(model, x0)
-end
-visualize!(vis, model, Xref, opt)
-
 # Goal position
 xgoal = MC.min2max(model, [-deg2rad(20), deg2rad(40)])
-visualize!(vis, model, xgoal)
+# visualize!(vis, model, xgoal) 
 r_2 = MC.gettran(model, xgoal)[2]
 q_2 = MC.getquat(model, xgoal)[2]
 p_ee = SA[0,0,0.5]
 r_ee = r_2 + MC.Amat(q_2)*p_ee
 
-## Set up the problems
+# Set up the problems
 Qr = Diagonal(SA_F64[1,1,1.])
 Qq = Diagonal(SA_F64[1,1,1,1.])
 R = Diagonal(SA_F64[1e-3, 1e-3])
@@ -55,7 +49,7 @@ prob = MC.DoublePendulumMOI(model, opt, Qr, Qq, R, x0, Xref, rf=r_ee, p_ee=p_ee)
 
 # Create initial guess
 z0 = zeros(prob.n_nlp)
-U0 = [SA[0.0,0.0] for k = 1:prob.N-1]
+U0 = [SA[0.1,0.1] for k = 1:prob.N-1]
 λ0 = [@SVector zeros(prob.p) for k = 1:prob.N-1]
 for k = 1:prob.N
     z0[prob.xinds[k]] = Xref[k]
@@ -65,7 +59,18 @@ for k = 1:prob.N
     end
 end
 
-# Test functions
+zsol, = MC.ipopt_solve(prob, z0, tol=1e-4, goal_tol=1e-6)
+Xsol = [zsol[xi] for xi in prob.xinds]
+Usol = [zsol[ui] for ui in prob.uinds]
+
+## Visualizer
+if !isdefined(Main, :vis)
+    vis = launchvis(model, x0)
+end
+visualize!(vis, model, Xref, opt)
+
+
+## Test functions
 grad_f = zeros(prob.n_nlp)
 c = zeros(prob.m_nlp)
 jac0 = zeros(prob.m_nlp, prob.n_nlp)
