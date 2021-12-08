@@ -19,7 +19,7 @@ Base.size(block::BlockID) = (block.m, block.n)
 function BlockID(i1::UnitRange, i2::UnitRange)
     BlockID(i1[1], i2[1], length(i1), length(i2))
 end
-
+ 
 function BlockID(i1::AbstractVector{<:Integer}, i2::AbstractVector{<:Integer})
     mblk = length(i1)
     nblk = length(i2)
@@ -87,7 +87,12 @@ mutable struct BlockViews
     end
 end
 
-getblock(blocks::BlockViews, v::AbstractVector, i1, i2) = getblock(blocks, v, BlockID(i1, i2))
+getblock(blocks::BlockViews, v::AbstractVector, i1, i2) = 
+    getblock(blocks, v, BlockID(i1, i2))
+getblock(blocks::BlockViews, v::AbstractVector, ::Colon, i2) = 
+    getblock(blocks, v, BlockID(1:blocks.m, i2))
+getblock(blocks::BlockViews, v::AbstractVector, i1, ::Colon) = 
+    getblock(blocks, v, BlockID(i1, 1:blocks.n))
 
 function getblock(blocks::BlockViews, v::AbstractVector, block::BlockID)
     if blocks.initializing
@@ -102,12 +107,18 @@ end
 
 setblock!(blocks::BlockViews, i1::AbstractVector, i2::AbstractVector) = 
     setblock!(blocks, BlockID(i1, i2)) 
+
 function setblock!(blocks::BlockViews, block::BlockID)
     if !haskey(blocks.blk2vec, block)
         inds = blocks.len .+ (1:length(block))
         blocks.blk2vec[block] = inds
         blocks.vec2blk[inds] = block
         blocks.len += length(block) 
+        if (block.row + block.m - 1) > blocks.m || (block.col + block.n - 1) > blocks.n || block.m < 1 || block.n < 1
+            i1 = block.row:block.m-1
+            i2 = block.col:block.n-1
+            @warn "Invalid block of ($i1,$i2) in matrix of size($(blocks.m),$(blocks.n))."
+        end
     end
     return blocks
 end
@@ -180,6 +191,14 @@ Base.IndexStyle(::NonzerosVector) = IndexLinear()
 function Base.setindex!(v::NonzerosVector, val, i1::AbstractVector, i2::AbstractVector)
     blockview = getblock(v.blocks, v.data, i1, i2) 
     blockview .= val
+    return blockview
+end
+
+const IndexRange = Union{Colon, AbstractVector{<:Integer}}
+@inline Base.getindex(v::NonzerosVector, i1::IndexRange, i2::IndexRange) = view(v, i1, i2) 
+@inline Base.dotview(v::NonzerosVector, i1::IndexRange, i2::IndexRange) = view(v, i1, i2)
+function Base.view(v::NonzerosVector, i1::IndexRange, i2::IndexRange)
+    blockview = getblock(v.blocks, v.data, i1, i2)
     return blockview
 end
 

@@ -97,8 +97,17 @@ c = MC.joint_constraints(model, xviol)
 c0 = zeros(10)
 @test MC.joint_constraints!(model, c0, xviol) ≈ c
 
+# Joint Constraint Jacobian
 @test MC.∇joint_constraints(model, xtest) ≈ 
     ForwardDiff.jacobian(x->MC.joint_constraints(model, x), xtest)
+cjac = zeros(10,14)
+@test MC.∇joint_constraints!(model, cjac, xtest) ≈ MC.∇joint_constraints(model, xtest)
+
+cjac2 = zeros(20,28)
+MC.∇joint_constraints!(model, cjac2, xtest, ix=15:28, yi=11)
+@test norm(cjac2[1:10,:], Inf) ≈ 0
+@test norm(cjac2[:,1:14], Inf) ≈ 0
+@test cjac2[11:20, 15:end] ≈ cjac
 
 # Jacobian-transpose vector product
 λtest = @SVector randn(10)
@@ -162,8 +171,8 @@ iq3_1 = ix3[4:7]
 iq3_2 = ix3[(4:7) .+ 7]
 
 jac_ip = zeros(12,16*3-2)
-jac_op = zero(jac)
-jac_an = zero(jac)
+jac_op = zero(jac_ip)
+jac_an = zero(jac_op)
 delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
 delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
 
@@ -180,10 +189,12 @@ delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h, yi=1
 y = zeros(2*length(del))
 delfun2(y, z)
 jac_op = zeros(2*length(del), length(z))
-jac_ip = zero(jac_op)
+jac_ip = copy(jac_op)
+jac_an = copy(jac_op)
 FiniteDiff.finite_difference_jacobian!(jac_op, (y,x)->y[13:end] .= delfun(x), z)
 FiniteDiff.finite_difference_jacobian!(jac_ip, (y,x)->delfun2(y,x), z)
-@test jac_op ≈ jac_ip
+MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, F1, F2, h, yi=13)
+@test jac_op ≈ jac_ip ≈ jac_an
 @test norm(jac_op[1:12,:],Inf) < 1e-12
 
 ##
@@ -197,8 +208,6 @@ d11, d12 = MC.∇D1Ld(model, x1test, x2test, h)
 d21, d22 = MC.∇D2Ld(model, x1test, x2test, h)
 @test norm(d21 - hess[13:24,1:12], Inf) < 1e-5
 @test norm(d22 - hess[13:24,13:24], Inf) < 1e-5
-
-
 
 ## Simulation
 sim = SimParams(1.0, 0.01)

@@ -130,8 +130,6 @@ function D2midpoint(model, x1, x2, h)
     return d1x, d1v
 end
 
-const SCALING = 2
-
 function D1Ld!(model::DoublePendulum, y, x1, x2, h; yi=1)
     ir = (1:3) .+ (yi-1)
     iq = (4:6) .+ (yi-1)
@@ -180,7 +178,7 @@ function ∇D1Ld(model::DoublePendulum, x1, x2, h)
     Z34 = @SMatrix zeros(3,3)
     Z33 = @SMatrix zeros(3,3)
     Z37 = @SMatrix zeros(3,6)
-    s = SCALING
+    s = 4 
     dq1_1 = s/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'R(q2_1)*Tmat * G(q1_1) + 
         s/h * ∇G2(q1_1, Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'q2_1)
     dq2_1 = s/h * G(q1_1)'Tmat*R(q2_1)'Hmat * J_1 * Hmat'L(q1_1)'G(q2_1) + 
@@ -234,7 +232,6 @@ function D2Ld(model::DoublePendulum, x1, x2, h)
     q1_1, q1_2 = getquat(model, x1)
     q2_1, q2_2 = getquat(model, x2)
     g = model.gravity
-    # s = SCALING
     [
         m_1/h * (r2_1-r1_1) - h*m_1*g*SA[0,0,1]/2
         4/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1
@@ -255,7 +252,7 @@ function ∇D2Ld(model::DoublePendulum, x1, x2, h)
     Z34 = @SMatrix zeros(3,3)
     Z33 = @SMatrix zeros(3,3)
     Z37 = @SMatrix zeros(3,6)
-    s = SCALING
+    s = 4 
 
     dq1_1 = s/h * G(q2_1)'R(Hmat * J_1 * Hmat'L(q1_1)'q2_1)*G(q1_1) + 
         s/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'R(q2_1)*Tmat*G(q1_1)
@@ -282,11 +279,11 @@ function ∇D2Ld(model::DoublePendulum, x1, x2, h)
     return d1, d2
 end
 
-function joint_constraints!(model::DoublePendulum, c, x)
+function joint_constraints!(model::DoublePendulum, c, x; yi=1)
     p = 5
     for j = 1:2
         joint = j == 1 ? model.joint0 : model.joint1
-        ci = (1:p) .+ (j-1)*p
+        ci = (1:p) .+ (j-1)*p .+ (yi-1)
         r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
         q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
         c[ci] .= joint_constraint(joint, r_1, q_1, r_2, q_2)
@@ -322,6 +319,33 @@ function ∇joint_constraints(model::DoublePendulum, x)
     jactran_2 = [I3 ∇rot(q_1, joint1.p1) -I3 -∇rot(q_2, joint1.p2)]
     jacaxis_2 = [Z23 joint1.orth*R(q_2)*Tmat Z23 joint1.orth*L(q_1)']
     return [jactran_1; jacaxis_1; jactran_2; jacaxis_2]
+end
+
+function ∇joint_constraints!(model::DoublePendulum, jac, x;
+    ix = 1:14, yi=1
+)   
+    p = 5
+    for j = 1:2
+        joint = j == 1 ? model.joint0 : model.joint1
+        ci = (1:p) .+ (j-1)*p .+ (yi-1)
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        ir_1 = (1:3) .+ (j-2)*7 .+ (ix[1] - 1)  # rind[k,j-1]
+        iq_1 = (4:7) .+ (j-2)*7 .+ (ix[1] - 1)  
+        ir_2 = (1:3) .+ (j-1)*7 .+ (ix[1] - 1)  # rind[k,j] 
+        iq_2 = (4:7) .+ (j-1)*7 .+ (ix[1] - 1)
+
+        dr_1, dq_1, dr_2, dq_2 = ∇joint_constraint(joint, r_1, q_1, r_2, q_2)
+        # println("ci = $(ci), xinds = $(ir_1[1]):$(iq_2[end])")
+        if (ir_1[1] - (ix[1]-1)) > 0
+            # println("processed prev state")
+            @view(jac[ci, ir_1]) .+= dr_1
+            @view(jac[ci, iq_1]) .+= dq_1
+        end
+        @view(jac[ci, ir_2]) .+= dr_2
+        @view(jac[ci, iq_2]) .+= dq_2
+    end
+    return jac 
 end
 
 function jtvp_joint_constraints!(model::DoublePendulum, y, x, λ; yi=1)
@@ -452,8 +476,6 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
         q1, q2, q3, = getquat(model, x1, j), getquat(model, x2, j), getquat(model, x3, j)
         
         # D1Ld
-        @show ir
-        @show iq
         y[ir] .+= -m/h * (r3 - r2) - h*m*g*SA[0,0,1]/2
         y[iq] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
 
@@ -489,7 +511,7 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
 end
 
 function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h; 
-    ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16
+    ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16, yi=1
 )
     # @. y = h*(F1 + F2)/2
     # D2Ld!(model, y, x1, x2, h)
@@ -505,8 +527,8 @@ function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h;
     hess = jac
     x = x2
     errstate = Val(false)
-    ir_1 = (1:3) .- 6
-    iϕ_1 = (4:6) .- 6
+    ir_1 = (1:3) .- 6 .+ (yi-1)
+    iϕ_1 = (4:6) .- 6 .+ (yi-1)
     p = 5
     for j = 1:2
         ir_2 = ir_1 .+ 6
@@ -527,23 +549,23 @@ function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h;
 
         dq_11, dq_12, dq_21, dq_22 = ∇²joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
         dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
-        if ir_1[1] > 0 
-            hess[iϕ_1, iq_1] .+= ∇²err(dq_11, dq_1, q_1, q_1, errstate) 
-            hess[iϕ_1, iq_2] .+= ∇²err(dq_12, dq_1, q_1, q_2, errstate) 
-            hess[iϕ_2, iq_1] .+= ∇²err(dq_21, dq_2, q_2, q_1, errstate) 
+        if (ir_1[1] - (yi-1)) > 0 
+            @view(hess[iϕ_1, iq_1]) .+= ∇²err(dq_11, dq_1, q_1, q_1, errstate) * h
+            @view(hess[iϕ_1, iq_2]) .+= ∇²err(dq_12, dq_1, q_1, q_2, errstate) * h
+            @view(hess[iϕ_2, iq_1]) .+= ∇²err(dq_21, dq_2, q_2, q_1, errstate) * h
         end
-        hess[iϕ_2, iq_2] .+= ∇²err(dq_22, dq_2, q_2, q_2, errstate) 
+        @view(hess[iϕ_2, iq_2]) .+= ∇²err(dq_22, dq_2, q_2, q_2, errstate) * h
 
         ir_1 = ir_1 .+ 6
         iϕ_1 = iϕ_1 .+ 6
     end
-    jac_x2 = view(jac, :, ix2)
-    jac_x2 .*= h
+    # jac_x2 = view(jac, :, ix2)
+    # jac_x2 .*= h
 
 
     # Discrete Legendre Transforms
-    ir = 1:3
-    iq = 4:6
+    ir = (1:3) .+ (yi-1)
+    iq = (4:6) .+ (yi-1)
     p = 5
     g = model.gravity
     for j = 1:2
@@ -556,19 +578,19 @@ function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h;
         ir3, iq3 = ix3[getrind(model, j)], ix3[getqind(model, j)]
         
         # D1Ld
-        jac[ir, ir2] .+= +m/h * I3
-        jac[ir, ir3] .+= -m/h * I3
-        jac[iq, iq2] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'R(q3)*Tmat + 
+        @view(jac[ir, ir2]) .+= +m/h * I3
+        @view(jac[ir, ir3]) .+= -m/h * I3
+        @view(jac[iq, iq2]) .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'R(q3)*Tmat + 
             4/h * ∇G(q2, Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3)
-        jac[iq, iq3] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)' + 
+        @view(jac[iq, iq3]) .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)' + 
             4/h * G(q2)'Tmat*L(Hmat * J * Hmat'L(q2)'q3) * Tmat
 
         # D2Ld
-        jac[ir, ir1] .+= -m/h * I3
-        jac[ir, ir2] .+= +m/h * I3
-        jac[iq, iq1] .+= 4/h * G(q2)'R(Hmat * J * Hmat'L(q1)'q2) + 
+        @view(jac[ir, ir1]) .+= -m/h * I3
+        @view(jac[ir, ir2]) .+= +m/h * I3
+        @view(jac[iq, iq1]) .+= 4/h * G(q2)'R(Hmat * J * Hmat'L(q1)'q2) + 
             4/h * G(q2)'L(q1)*Hmat * J * Hmat'R(q2)*Tmat
-        jac[iq, iq2] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)' + 
+        @view(jac[iq, iq2]) .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)' + 
             4/h * ∇G(q2, L(q1)*Hmat * J * Hmat'L(q1)'q2)
 
         ir = ir .+ 6

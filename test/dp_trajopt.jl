@@ -73,6 +73,9 @@ rc = MOI.jacobian_structure(prob)
 row = [idx[1] for idx in rc]
 col = [idx[2] for idx in rc]
 jac = zeros(length(rc)) 
+jac .= 1
+jac_struct = sparse(row, col, jac)
+jac_struct
 
 ztest = zero(z0)
 Xtest = [MC.randstate(model) for k = 1:prob.N]
@@ -90,12 +93,13 @@ end
 J = MOI.eval_objective(prob, ztest)
 MOI.eval_objective_gradient(prob, grad_f, z0)
 MOI.eval_constraint(prob, c, z0)
-c0 = copy(c)
 
+jac .= 0
 MOI.eval_constraint_jacobian(prob, jac, z0)
-c0 .= 0
 FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), z0)
 @test sparse(row, col, jac, prob.m_nlp, prob.n_nlp) ≈ jac0
+length(row) / (prob.m_nlp * prob.n_nlp)
+prob.m_nlp
 # @test c[end-2:end] ≈ zeros(3)
 
 zsol, = MC.ipopt_solve(prob, z0, tol=1e-4, goal_tol=1e-6)

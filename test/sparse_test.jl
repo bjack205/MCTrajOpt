@@ -6,16 +6,7 @@ using SparseArrays
 
 const MC = MCTrajOpt
 
-struct MyVec{T,V} <: AbstractVector{T}
-    data::V
-    function MyVec(v::V) where V <: AbstractVector
-        new{eltype(v), V}(v)
-    end
-end
-Base.size(a::MyVec) = size(a.data)
-Base.IndexStyle(::MyVec) = IndexLinear()
-Base.getindex(a::MyVec, i::Integer) = v[i]
-
+##
 m = 100
 n = 50
 
@@ -34,6 +25,11 @@ MC.setblock!(blocks,7:12,7:12)
 v = MC.NonzerosVector(zeros(9+12+36), blocks)
 MC.getblock(blocks, v, 1:3, 1:3) .= 1
 @test v[1:9] ≈ ones(9)
+
+# Base.broadcasted
+v0 = v.data
+Base.dotview(v0, 1:3)
+Base.dotview(v, 1:3, 1:3)
 
 # Fill in the vector
 A = spzeros(m,n)

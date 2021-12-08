@@ -20,3 +20,16 @@ let joint = model.joint0
     MC.∇²joint_constraint!(joint, hess, x[ir1], x[iq1], x[ir2], x[iq2], λ)
     hess ≈ hess0
 end
+
+let joint = model.joint0
+    r_1 = @SVector randn(3)
+    r_2 = @SVector randn(3)
+    q_1 = normalize(@SVector randn(4))
+    q_2 = normalize(@SVector randn(4))
+    
+    dr_1, dq_1, dr_2, dq_2 = MC.∇joint_constraint(joint, r_1, q_1, r_2, q_2)
+    @test ForwardDiff.jacobian(x->MC.joint_constraint(joint, x, q_1, r_2, q_2), r_1) ≈ dr_1
+    @test ForwardDiff.jacobian(x->MC.joint_constraint(joint, r_1, x, r_2, q_2), q_1) ≈ dq_1
+    @test ForwardDiff.jacobian(x->MC.joint_constraint(joint, r_1, q_1, x, q_2), r_2) ≈ dr_2
+    @test ForwardDiff.jacobian(x->MC.joint_constraint(joint, r_1, q_1, r_2, x), q_2) ≈ dq_2
+end

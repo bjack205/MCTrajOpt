@@ -191,8 +191,8 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
 
         # Compute the Discrete Euler-Lagrange constraint
         λ = z[λinds[i]]
-        c[ci] = DEL(prob.model, x1, x2, x3, λ, F1, F2, h)
-        # DEL!(prob.model, c, x1, x2, x3, λ, F1, F2, h, yi=ci[1])
+        # c[ci] = DEL(prob.model, x1, x2, x3, λ, F1, F2, h)
+        DEL!(prob.model, c, x1, x2, x3, λ, F1, F2, h, yi=ci[1])
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L
@@ -202,7 +202,8 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
     ci = off .+ (1:prob.p)
     for (i,k) in enumerate(2:prob.N)  # assume the initial configuration is feasible
         x = z[xinds[k]]
-        c[ci] = joint_constraints(prob.model, x)
+        # c[ci] = joint_constraints(prob.model, x)
+        joint_constraints!(prob.model, c, x, yi=ci[1])
         ci = ci .+ prob.p
         off += prob.p
     end
@@ -236,6 +237,7 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
     J0 = NonzerosVector(jac, prob.blocks)
 
     h = prob.params.h
+    model = prob.model
     rinds, qinds = prob.rinds, prob.qinds
     uinds, λinds = prob.uinds, prob.λinds
     xinds = prob.xinds
@@ -260,9 +262,12 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
 
         # Compute the Discrete Euler-Lagrange constraint
         λ2 = z[λinds[i]]
-        J0[ci, xinds[k-1]] = ForwardDiff.jacobian(x->con(x, x2, x3, u1, u2, λ2), x1)
-        J0[ci, xinds[k]]   = ForwardDiff.jacobian(x->con(x1, x, x3, u1, u2, λ2), x2)
-        J0[ci, xinds[k+1]] = ForwardDiff.jacobian(x->con(x1, x2, x, u1, u2, λ2), x3)
+        # J0[ci, xinds[k-1]] = ForwardDiff.jacobian(x->con(x, x2, x3, u1, u2, λ2), x1)
+        # J0[ci, xinds[k]]   = ForwardDiff.jacobian(x->con(x1, x, x3, u1, u2, λ2), x2)
+        # J0[ci, xinds[k+1]] = ForwardDiff.jacobian(x->con(x1, x2, x, u1, u2, λ2), x3)
+        F1 = getwrenches(prob.model, x1, u1)
+        F2 = getwrenches(prob.model, x2, u2)
+        ∇DEL!(model, J0, x1, x2, x3, λ2, F1, F2, h, ix1=xinds[k-1], ix2=xinds[k], ix3=xinds[k+1], yi=ci[1])
         J0[ci, uinds[k-1]] = ForwardDiff.jacobian(u->con(x1, x2, x3, u, u2, λ2), u1)
         J0[ci, uinds[k]]   = ForwardDiff.jacobian(u->con(x1, x2, x3, u1, u, λ2), u2)
         J0[ci, λinds[i]]   = ForwardDiff.jacobian(λ->con(x1, x2, x3, u1, u2, λ), λ2)
@@ -275,7 +280,8 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
     ci = off .+ (1:prob.p)
     for (i,k) in enumerate(2:prob.N)  # assume the initial configuration is feasible
         x = z[xinds[k]]
-        J0[ci, xinds[k]] = ∇joint_constraints(prob.model, x)
+        ∇joint_constraints!(model, J0, x, ix=xinds[k], yi=ci[1])
+        # J0[ci, xinds[k]] = ∇joint_constraints(prob.model, x)
         ci = ci .+ prob.p
         off += prob.p
     end
