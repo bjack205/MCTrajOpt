@@ -20,8 +20,6 @@ model = DoublePendulum(body1, body2)
 
 # Test minimal to maximal coordinate
 x0 = MC.min2max(model, [deg2rad(0), deg2rad(0)])
-vis = launchvis(model, x0)
-visualize!(vis, model, x0)
 
 # Generate a random state
 xtest = randstate(model)
@@ -128,55 +126,66 @@ MC.∇²joint_constraints!(model, chess, xtest, λtest)
 @test chess ≈ 
     ForwardDiff.jacobian(x->MC.errstate_jacobian(model, x)'MC.jtvp_joint_constraints(model, x, λtest), xtest)
 
+## Joint forces
+ξ = zeros(12)
+utest = SA[0.1,-0.3]
+@test MC.getwrenches!(model, ξ, xtest, utest) ≈ MC.getwrenches(model, xtest, utest)
+
+wjac = zeros(12, 16)
+@test MC.∇getwrenches!(model, wjac, xtest, utest) ≈ 
+    ForwardDiff.jacobian(x->MC.getwrenches(model, x[1:14], x[15:16]), [xtest; utest])
+
+wjac2 = zeros(24, 32)
+MC.∇getwrenches!(model, wjac2, xtest, utest, ix=17:30, iu=31:32, yi=13) 
+wjac3 = ForwardDiff.jacobian(x->[zeros(12); MC.getwrenches(model, x[17:30], x[31:32])], [zeros(16); xtest; utest])
+@test wjac2 ≈ wjac3
+
+wjac2 = zeros(12, 32)
+MC.∇getwrenches!(model, wjac2, xtest, utest, ix=17:30, iu=31:32, yi=1) 
+wjac3 = ForwardDiff.jacobian(x->MC.getwrenches(model, x[17:30], x[31:32]), [zeros(16); xtest; utest])
+@test wjac2 ≈ wjac3
+
+wjac2 = zeros(24, 16)
+MC.∇getwrenches!(model, wjac2, xtest, utest, yi=13) 
+wjac3 = ForwardDiff.jacobian(x->[zeros(12); MC.getwrenches(model, x[1:14], x[15:16])], [xtest; utest])
+@test wjac2 ≈ wjac3
+
 ## DEL
-F1 = SA[0,0,0, 0,0,-1, 0,0,0, 0,0,1]
-F2 = copy(F1)
+u1test = @SVector randn(2)
+u2test = @SVector randn(2)
 λ = @SVector zeros(10)
 λtest = @SVector randn(10)
 x3test = x2test ⊕ dx 
-MC.DEL(model, x1test, x2test, x3test, λ, F1, F2, h)
+MC.DEL(model, x1test, x2test, x3test, λ, u1test, u2test, h)
 del = zeros(12)
-MC.DEL!(model, del, x1test, x2test, x3test, λtest, F1, F2, h)
-@test del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, F1, F2, h)
-
-# jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x, x2test, x3test, λtest, F1, F2, h), x1test)
-# jac1 = zero(Matrix(jac0))
-# ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x, x2test, x3test, λtest, F1, F2, h), del, x1test)
-# @test jac1 ≈ jac0
-
-# jac0 = ForwardDiff.jacobian(x->MC.DEL(model, x1test, x, x3test, λtest, F1, F2, h), x2test)
-# jac1 = zero(Matrix(jac0))
-# ForwardDiff.jacobian!(jac1, (y,x)->MC.DEL!(model, y, x1test, x, x3test, λtest, F1, F2, h), del, x2test)
-# @test jac1 ≈ jac0
-
-# MC.DEL!(model, del, x1test, x2test, x3test, λtest, F1, F2, h)
-# @test del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, F1, F2, h)
+MC.DEL!(model, del, x1test, x2test, x3test, λtest, u1test, u2test, h)
+@test del ≈ MC.DEL(model, x1test, x2test, x3test, λtest, u1test, u2test, h)
 
 ##
 ix1 = 1:14
+iu1 = 15:16
 ix2 = ix1 .+ 16
+iu2 = iu1 .+ 16
 ix3 = ix2 .+ 16
-iq2_1 = ix2[4:7]
-iq2_2 = ix2[(4:7) .+ 7]
-iq3_1 = ix3[4:7]
-iq3_2 = ix3[(4:7) .+ 7]
 
 jac_ip = zeros(12,16*3-2)
-jac_op = zero(jac)
-jac_an = zero(jac)
-delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
-delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
+jac_op = zero(jac_ip)
+jac_an = zero(jac_ip)
+delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h)
+delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h)
 
-z = [x1test; zeros(2); x2test; zeros(2); x3test]
+z = Vector([x1test; u1test; x2test; u2test; x3test])
 delfun(del, z)
 @test delfun(z) ≈ del
 
-jac_op = FiniteDiff.finite_difference_jacobian(delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
-FiniteDiff.finite_difference_jacobian!(jac_ip, delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
-MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, F1, F2, h)
-@test jac_ip ≈ jac_op ≈ jac_an
+jac_op = FiniteDiff.finite_difference_jacobian(delfun, z) 
+FiniteDiff.finite_difference_jacobian!(jac_ip, delfun, z)
+jac_an .= 0
+MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, u1test, u2test, h)
+@test jac_ip ≈ jac_op atol=1e-6
+@test jac_ip ≈ jac_an atol=1e-6
 
-delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h, yi=13)
+delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h, yi=13)
 y = zeros(2*length(del))
 delfun2(y, z)
 jac_op = zeros(2*length(del), length(z))
@@ -187,7 +196,6 @@ FiniteDiff.finite_difference_jacobian!(jac_ip, (y,x)->delfun2(y,x), z)
 @test norm(jac_op[1:12,:],Inf) < 1e-12
 
 ##
-
 e = zeros(24)
 hess = FiniteDiff.finite_difference_hessian(e->MC.discretelagrangian(model, x1test ⊕ e[1:12], x2test ⊕ e[13:24], h), e)
 d11, d12 = MC.∇D1Ld(model, x1test, x2test, h)
@@ -199,36 +207,37 @@ d21, d22 = MC.∇D2Ld(model, x1test, x2test, h)
 @test norm(d22 - hess[13:24,13:24], Inf) < 1e-5
 
 
-
-## Simulation
-sim = SimParams(1.0, 0.01)
-function wrench(t)
-    T1 = 0.1 <= t < 0.7 ? 1.0 : 0.0
-    SA[0,0,0, 0,0,T1, 0,0,0, 0,0,-T1] 
-end
-F = wrench.(sim.thist) 
-x0 = MC.min2max(model, [deg2rad(0.0), deg2rad(0.0)])
-Xsim = MC.simulate(model, sim, F, x0)
-
-visualize!(vis, model, Xsim, sim)
-
 ##
-body1 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
-body2 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
-model = DoublePendulum(body1, body2, gravity = false)
-sim = SimParams(5.0, 0.01)
-sim.N
-function control(t)
-    T1 = 0.1 <= t < 0.7 ? 2.0 : 0.0
-    T2 = cos(pi*t)*2
-    SA[T1,T2]
-end
-U = control.(sim.thist)
-# plot(hcat(Vector.(U)...)')
 
-x0 = MC.min2max(model, [0.0,0])
-# vis = launchvis(model, x0)
-visualize!(vis, model, x0)
-Xsim = MC.simulate(model, sim, U, x0)
-visualize!(vis, model, Xsim, sim)
+# ## Simulation
+# sim = SimParams(1.0, 0.01)
+# function wrench(t)
+#     T1 = 0.1 <= t < 0.7 ? 1.0 : 0.0
+#     SA[0,0,0, 0,0,T1, 0,0,0, 0,0,-T1] 
+# end
+# F = wrench.(sim.thist) 
+# x0 = MC.min2max(model, [deg2rad(0.0), deg2rad(0.0)])
+# Xsim = MC.simulate(model, sim, F, x0)
+
+# visualize!(vis, model, Xsim, sim)
+
+# ##
+# body1 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
+# body2 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
+# model = DoublePendulum(body1, body2, gravity = false)
+# sim = SimParams(5.0, 0.01)
+# sim.N
+# function control(t)
+#     T1 = 0.1 <= t < 0.7 ? 2.0 : 0.0
+#     T2 = cos(pi*t)*2
+#     SA[T1,T2]
+# end
+# U = control.(sim.thist)
+# # plot(hcat(Vector.(U)...)')
+
+# x0 = MC.min2max(model, [0.0,0])
+# # vis = launchvis(model, x0)
+# visualize!(vis, model, x0)
+# Xsim = MC.simulate(model, sim, U, x0)
+# visualize!(vis, model, Xsim, sim)
 

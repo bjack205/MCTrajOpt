@@ -191,7 +191,7 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
 
         # Compute the Discrete Euler-Lagrange constraint
         λ = z[λinds[i]]
-        c[ci] = DEL(prob.model, x1, x2, x3, λ, F1, F2, h)
+        c[ci] = DEL(prob.model, x1, x2, x3, λ, u1, u2, h)
         # DEL!(prob.model, c, x1, x2, x3, λ, F1, F2, h, yi=ci[1])
         
         ci = ci .+ 6*prob.L
@@ -253,9 +253,9 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
         x3 = z[xinds[k+1]] 
 
         con(x1,x2,x3,u1,u2,λ) = begin
-            F1 = getwrenches(prob.model, x1, u1)
-            F2 = getwrenches(prob.model, x2, u2)
-            DEL(prob.model, x1, x2, x3, λ, F1, F2, h) 
+            # F1 = getwrenches(prob.model, x1, u1)
+            # F2 = getwrenches(prob.model, x2, u2)
+            DEL(prob.model, x1, x2, x3, λ, u1, u2, h) 
         end 
 
         # Compute the Discrete Euler-Lagrange constraint
