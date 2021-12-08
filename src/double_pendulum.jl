@@ -324,6 +324,33 @@ function ∇joint_constraints(model::DoublePendulum, x)
     return [jactran_1; jacaxis_1; jactran_2; jacaxis_2]
 end
 
+function ∇joint_constraints!(model::DoublePendulum, jac, x;
+    xi=1, yi=1
+)   
+    p = 5
+    for j = 1:2
+        joint = j == 1 ? model.joint0 : model.joint1
+        ci = (1:p) .+ (j-1)*p .+ (xi-1)
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        ir_1 = (1:3) .+ (j-2)*7 .+ (yi - 1)  # rind[k,j-1]
+        iq_1 = (4:7) .+ (j-2)*7 .+ (yi - 1)  
+        ir_2 = (1:3) .+ (j-1)*7 .+ (yi - 1)  # rind[k,j] 
+        iq_2 = (4:7) .+ (j-1)*7 .+ (yi - 1)
+
+        dr_1, dq_1, dr_2, dq_2 = ∇joint_constraint(joint, r_1, q_1, r_2, q_2)
+        # println("ci = $(ci), xinds = $(ir_1[1]):$(iq_2[end])")
+        if (ir_1[1] - (yi-1)) > 0
+            # println("processed prev state")
+            @view(jac[ci, ir_1]) .+= dr_1
+            @view(jac[ci, iq_1]) .+= dq_1
+        end
+        @view(jac[ci, ir_2]) .+= dr_2
+        @view(jac[ci, iq_2]) .+= dq_2
+    end
+    return jac 
+end
+
 function jtvp_joint_constraints!(model::DoublePendulum, y, x, λ; yi=1)
     ir_1 = (1:3) .- 6 .+ (yi-1)
     iq_1 = (4:6) .- 6 .+ (yi-1)

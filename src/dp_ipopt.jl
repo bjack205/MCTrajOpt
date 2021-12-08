@@ -278,7 +278,8 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
     ci = off .+ (1:prob.p)
     for (i,k) in enumerate(2:prob.N)  # assume the initial configuration is feasible
         x = z[xinds[k]]
-        J0[ci, xinds[k]] = ∇joint_constraints(prob.model, x)
+        # J0[ci, xinds[k]] = ∇joint_constraints(prob.model, x)
+        ∇joint_constraints!(prob.model, J0, x, xi=ci[1], yi=xinds[k][1])
         ci = ci .+ prob.p
         off += prob.p
     end

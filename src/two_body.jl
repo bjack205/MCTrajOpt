@@ -41,7 +41,7 @@ end
 function ∇joint_constraint(joint::RevoluteJoint, r_1, q_1, r_2, q_2)
     Z23 = @SMatrix zeros(2,3)
     dr_1 = [I3; Z23]
-    dq_1 = [∇rot(q_1, joint.p1); joint.orth*R(q_2)'Tmat]
+    dq_1 = [∇rot(q_1, joint.p1); joint.orth*R(q_2)*Tmat]
     dr_2 = [-I3; Z23]
     dq_2 = [-∇rot(q_2, joint.p2); joint.orth*L(q_1)']
     return dr_1, dq_1, dr_2, dq_2

@@ -83,7 +83,7 @@ end
 @test MC.D2Ld(model, x1test, x2test, h) ≈ MC.D2Ld!(model, dlt2, x1test, x2test, h)
 
 
-# Joint Constraints
+## Joint Constraints
 c = MC.joint_constraints(model, x0)
 @test norm(c, Inf) < 1e-12
 xviol = x0 + SA[0.0,0,0, 0,0,0,0, 0.1,0,0, 0,0,0,0]
@@ -95,8 +95,11 @@ c = MC.joint_constraints(model, xviol)
 c0 = zeros(10)
 @test MC.joint_constraints!(model, c0, xviol) ≈ c
 
+# Jacobian 
 @test MC.∇joint_constraints(model, xtest) ≈ 
     ForwardDiff.jacobian(x->MC.joint_constraints(model, x), xtest)
+cjac = zeros(10, 14)
+@test MC.∇joint_constraints!(model, cjac, xtest) ≈ MC.∇joint_constraints(model, xtest)
 
 # Jacobian-transpose vector product
 λtest = @SVector randn(10)
