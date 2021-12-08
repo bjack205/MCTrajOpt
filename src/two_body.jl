@@ -134,7 +134,42 @@ getquat(body::TwoBody, x, j) = j == 0 ? basequat(body) : x[SA[4,5,6,7] .+ (j-1)*
 getlinvel(body::TwoBody, v, j) = v[SA[1,2,3] .+ (j-1)*6]
 getangvel(body::TwoBody, v, j) = v[SA[4,5,6] .+ (j-1)*6]
 
+force1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = SA_F64[0,0,0]
+force2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = SA_F64[0,0,0]
 
+torque1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = -joint.axis * u 
+torque2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = Amat(L(q_2)'q_1)*joint.axis * u 
+
+∇force11(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force12(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force1u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = @SMatrix zeros(3,1) 
+
+∇force21(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force22(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force2u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = @SMatrix zeros(3,1) 
+
+∇torque11(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇torque12(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇torque1u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = -joint.axis 
+
+function ∇torque21(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
+    dr = @SMatrix zeros(3,3)
+    q21 = L(q_2)'q_1
+    dq = ∇rot(q21, joint.axis * u) * L(q_2)'
+    return dr, dq
+end
+function ∇torque22(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
+    dr = @SMatrix zeros(3,3)
+    q21 = L(q_2)'q_1
+    dq = ∇rot(q21, joint.axis * u) * R(q_1) * Tmat
+    return dr, dq
+end
+∇torque2u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = Amat(L(q_2)'q_1) * joint.axis
+
+wrench1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = 
+    force1(joint, r_1, q_2, r_2, q_2, u), torque1(joint, r_1, q_1, r_2, q_2, u)
+wrench2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = 
+    force2(joint, r_1, q_2, r_2, q_2, u), torque2(joint, r_1, q_1, r_2, q_2, u)
 
 function splitvel(model::TwoBody, ν)
     inds = SVector{6}(1:6)

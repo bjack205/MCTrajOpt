@@ -33,15 +33,9 @@ U = control.(opt.thist)
 x0 = MC.min2max(model, [0.0,0])
 Xref = MC.simulate(model, opt, U, x0)
 
-# Visualizer
-if !isdefined(Main, :vis)
-    vis = launchvis(model, x0)
-end
-visualize!(vis, model, Xref, opt)
-
 # Goal position
 xgoal = MC.min2max(model, [-deg2rad(20), deg2rad(40)])
-visualize!(vis, model, xgoal)
+# visualize!(vis, model, xgoal)
 r_2 = MC.gettran(model, xgoal)[2]
 q_2 = MC.getquat(model, xgoal)[2]
 p_ee = SA[0,0,0.5]
@@ -65,7 +59,28 @@ for k = 1:prob.N
     end
 end
 
-# Test functions
+zsol, = MC.ipopt_solve(prob, z0, tol=1e-4, goal_tol=1e-6)
+
+## Test Jacobian
+rc = MOI.jacobian_structure(prob)
+row = [idx[1] for idx in rc]
+col = [idx[2] for idx in rc]
+jac = zeros(length(rc)) 
+jac0 = zeros(prob.m_nlp, prob.n_nlp)
+c = zeros(prob.m_nlp)
+
+MOI.eval_constraint_jacobian(prob, jac, z0)
+FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), z0)
+@test sparse(row, col, jac, prob.m_nlp, prob.n_nlp) ≈ jac0
+
+## Visualizer
+if !isdefined(Main, :vis)
+    vis = launchvis(model, x0)
+end
+visualize!(vis, model, Xref, opt)
+
+
+## Test functions
 grad_f = zeros(prob.n_nlp)
 c = zeros(prob.m_nlp)
 jac0 = zeros(prob.m_nlp, prob.n_nlp)
