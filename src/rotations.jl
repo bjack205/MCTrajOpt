@@ -1,5 +1,6 @@
 const I3 = SA[1 0 0; 0 1 0; 0 0 1]
 const I4 = SA[1 0 0 0; 0 1 0 0; 0 0 1 0; 0 0 0 1]
+const Z3 = @SMatrix zeros(3,3)
 
 function hat(ω)
     return [0 -ω[3] ω[2];

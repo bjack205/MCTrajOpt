@@ -20,7 +20,9 @@ model = DoublePendulum(body1, body2)
 
 # Test minimal to maximal coordinate
 x0 = MC.min2max(model, [deg2rad(0), deg2rad(0)])
-vis = launchvis(model, x0)
+if !isdefined(Main, :vis)
+    vis = launchvis(model, x0)
+end
 visualize!(vis, model, x0)
 
 # Generate a random state
@@ -136,6 +138,16 @@ chess = zeros(12,14)
 MC.∇²joint_constraints!(model, chess, xtest, λtest)
 @test chess ≈ 
     ForwardDiff.jacobian(x->MC.errstate_jacobian(model, x)'MC.jtvp_joint_constraints(model, x, λtest), xtest)
+
+## Joint forces
+ξ = zeros(12)
+utest = SA[0.1,-0.3]
+@test MC.getwrenches!(model, ξ, xtest, utest) ≈ MC.getwrenches(model, xtest, utest)
+
+wjac = zeros(12, 16)
+@test MC.∇getwrenches!(model, wjac, xtest, utest) ≈ 
+    ForwardDiff.jacobian(x->MC.getwrenches(model, x[1:14], x[15:16]), [xtest; utest])
+
 
 ## DEL
 F1 = SA[0,0,0, 0,0,-1, 0,0,0, 0,0,1]

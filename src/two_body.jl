@@ -97,18 +97,43 @@ function wrench(joint::RevoluteJoint, x1, x2, u::Real)
     return ξ1, ξ2
 end
 
-function wrench1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
-    T1 = -joint.axis * u  # torque on body 1
-    F1 = SA_F64[0,0,0]
-    return F1, T1
-end
+force1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = SA_F64[0,0,0]
+force2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = SA_F64[0,0,0]
 
-function wrench2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
+torque1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = -joint.axis * u 
+torque2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = Amat(L(q_2)'q_1)*joint.axis * u 
+
+∇force11(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force12(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force1u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = @SMatrix zeros(3,1) 
+
+∇force21(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force22(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇force2u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = @SMatrix zeros(3,1) 
+
+∇torque11(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇torque12(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = ((@SMatrix zeros(3,3)), @SMatrix zeros(3,4))
+∇torque1u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = -joint.axis 
+
+function ∇torque21(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
+    dr = @SMatrix zeros(3,3)
     q21 = L(q_2)'q_1
-    T2 = Amat(q21)*joint.axis * u
-    F2 = SA_F64[0,0,0]
-    return F2, T2 
+    dq = ∇rot(q21, joint.axis * u) * L(q_2)'
+    return dr, dq
 end
+function ∇torque22(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
+    dr = @SMatrix zeros(3,3)
+    q21 = L(q_2)'q_1
+    dq = ∇rot(q21, joint.axis * u) * R(q_1) * Tmat
+    return dr, dq
+end
+∇torque2u(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = Amat(L(q_2)'q_1) * joint.axis
+
+wrench1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = 
+    force1(joint, r_1, q_2, r_2, q_2, u), torque1(joint, r_1, q_1, r_2, q_2, u)
+wrench2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = 
+    force2(joint, r_1, q_2, r_2, q_2, u), torque2(joint, r_1, q_1, r_2, q_2, u)
+
 
 abstract type TwoBody end
 struct SpaceBar <: TwoBody 
