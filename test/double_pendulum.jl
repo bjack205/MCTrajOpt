@@ -101,6 +101,17 @@ c0 = zeros(10)
 cjac = zeros(10, 14)
 @test MC.∇joint_constraints!(model, cjac, xtest) ≈ MC.∇joint_constraints(model, xtest)
 
+cjacE = zeros(10, 12)
+@test MC.∇joint_constraints!(model, cjacE, xtest, errstate=Val(true)) ≈ 
+    MC.∇joint_constraints(model, xtest) * MC.errstate_jacobian(model, xtest)
+
+cjacT = zeros(14, 10)
+@test MC.∇joint_constraints!(model, cjacT, xtest, transpose=Val(true)) ≈ cjac'
+
+cjacTE = zeros(12, 10)
+@test MC.∇joint_constraints!(model, cjacTE, xtest, 
+    transpose=Val(true), errstate=Val(true), s=2) ≈ 2*cjacE'
+
 # Jacobian-transpose vector product
 λtest = @SVector randn(10)
 @test MC.jtvp_joint_constraints(model, xtest, λtest) ≈ MC.∇joint_constraints(model, xtest)'λtest

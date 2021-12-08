@@ -324,29 +324,41 @@ function ∇joint_constraints(model::DoublePendulum, x)
     return [jactran_1; jacaxis_1; jactran_2; jacaxis_2]
 end
 
-function ∇joint_constraints!(model::DoublePendulum, jac, x;
-    xi=1, yi=1
+function ∇joint_constraints!(model::DoublePendulum, jac, x; errstate=Val(false), 
+    transpose=Val(false), xi=1, yi=1, s = one(eltype(jac))
 )   
+    if transpose == Val(true)
+        xi,yi=yi,xi
+    end
+
     p = 5
     for j = 1:2
         joint = j == 1 ? model.joint0 : model.joint1
         ci = (1:p) .+ (j-1)*p .+ (xi-1)
         r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
         q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
-        ir_1 = (1:3) .+ (j-2)*7 .+ (yi - 1)  # rind[k,j-1]
-        iq_1 = (4:7) .+ (j-2)*7 .+ (yi - 1)  
-        ir_2 = (1:3) .+ (j-1)*7 .+ (yi - 1)  # rind[k,j] 
-        iq_2 = (4:7) .+ (j-1)*7 .+ (yi - 1)
+        w = errstate == Val(true) ? 6 : 7
+        ir_1 = (1:3) .+ (j-2)*w .+ (yi - 1)  # rind[k,j-1]
+        iq_1 = (4:w) .+ (j-2)*w .+ (yi - 1)  
+        ir_2 = (1:3) .+ (j-1)*w .+ (yi - 1)  # rind[k,j] 
+        iq_2 = (4:w) .+ (j-1)*w .+ (yi - 1)
+
+        idx(i1,i2) = idx(i1,i2,transpose)
+        idx(i1,i2,::Val{true}) = (i2,i1)
+        idx(i1,i2,::Val{false}) = (i1,i2)
+        dotran(A) = dotran(A, transpose) 
+        dotran(A, ::Val{true}) = A'
+        dotran(A, ::Val{false}) = A
 
         dr_1, dq_1, dr_2, dq_2 = ∇joint_constraint(joint, r_1, q_1, r_2, q_2)
         # println("ci = $(ci), xinds = $(ir_1[1]):$(iq_2[end])")
         if (ir_1[1] - (yi-1)) > 0
             # println("processed prev state")
-            @view(jac[ci, ir_1]) .+= dr_1
-            @view(jac[ci, iq_1]) .+= dq_1
+            @view(jac[idx(ci, ir_1)...]) .+= dotran(dr_1) * s
+            @view(jac[idx(ci, iq_1)...]) .+= dotran(dq_1 * G(q_1, errstate)) * s
         end
-        @view(jac[ci, ir_2]) .+= dr_2
-        @view(jac[ci, iq_2]) .+= dq_2
+        @view(jac[idx(ci, ir_2)...]) .+= dotran(dr_2) * s
+        @view(jac[idx(ci, iq_2)...]) .+= dotran(dq_2 * G(q_2, errstate)) * s
     end
     return jac 
 end
@@ -665,6 +677,7 @@ end
 function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi=1, s=1.0)
     for j = 1:2
         joint = j == 1 ? model.joint0 : model.joint1
+        hasforce = !(joint isa RevoluteJoint)
         iu_j = iu[j]:iu[j]
         r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
         q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
@@ -679,16 +692,19 @@ function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi
         iq_2 = (4:7) .+ (j-1)*7 .+ (ix[1] - 1)
 
         if (iF_1[1] - (yi-1)) > 0
-            F_11 = ∇force11(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_1, ir_1]) .+= F_11[1] * s
-            @view(jac[iF_1, iq_1]) .+= F_11[2] * s
 
-            F_12 = ∇force12(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_1, ir_2]) .+= F_12[1] * s
-            @view(jac[iF_1, iq_2]) .+= F_12[2] * s
+            if hasforce 
+                F_11 = ∇force11(joint, r_1, q_1, r_2, q_2, u[j])
+                @view(jac[iF_1, ir_1]) .+= F_11[1] * s
+                @view(jac[iF_1, iq_1]) .+= F_11[2] * s
 
-            F_1u = ∇force1u(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_1, iu_j]) .+= F_1u * s
+                F_12 = ∇force12(joint, r_1, q_1, r_2, q_2, u[j])
+                @view(jac[iF_1, ir_2]) .+= F_12[1] * s
+                @view(jac[iF_1, iq_2]) .+= F_12[2] * s
+
+                F_1u = ∇force1u(joint, r_1, q_1, r_2, q_2, u[j])
+                @view(jac[iF_1, iu_j]) .+= F_1u * s
+            end
 
             T_11 = ∇torque11(joint, r_1, q_1, r_2, q_2, u[j])
             @view(jac[iT_1, ir_1]) .+= T_11[1] * s
@@ -702,20 +718,25 @@ function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi
             @view(jac[iT_1, iu_j]) .+= T_1u * s
         end
         if (ir_1[1] - (ix[1] - 1)) > 0
-            F_21 = ∇force21(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_2, ir_1]) .+= F_21[1] * s
-            @view(jac[iF_2, iq_1]) .+= F_21[2] * s
+            if hasforce
+                F_21 = ∇force21(joint, r_1, q_1, r_2, q_2, u[j])
+                @view(jac[iF_2, ir_1]) .+= F_21[1] * s
+                @view(jac[iF_2, iq_1]) .+= F_21[2] * s
+            end
 
             T_21 = ∇torque21(joint, r_1, q_1, r_2, q_2, u[j])
             @view(jac[iT_2, ir_1]) .+= T_21[1] * s
             @view(jac[iT_2, iq_1]) .+= T_21[2] * s
         end
-        F_22 = ∇force22(joint, r_1, q_1, r_2, q_2, u[j])
-        @view(jac[iF_2, ir_2]) .+= F_22[1] * s
-        @view(jac[iF_2, iq_2]) .+= F_22[2] * s
 
-        F_2u = ∇force2u(joint, r_1, q_1, r_2, q_2, u[j])
-        @view(jac[iF_2, iu_j]) .+= F_2u * s
+        if hasforce
+            F_22 = ∇force22(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iF_2, ir_2]) .+= F_22[1] * s
+            @view(jac[iF_2, iq_2]) .+= F_22[2] * s
+
+            F_2u = ∇force2u(joint, r_1, q_1, r_2, q_2, u[j])
+            @view(jac[iF_2, iu_j]) .+= F_2u * s
+        end
 
         T_22 = ∇torque22(joint, r_1, q_1, r_2, q_2, u[j])
         @view(jac[iT_2, ir_2]) .+= T_22[1] * s

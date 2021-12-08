@@ -37,6 +37,9 @@ function G(q)
     return L(q)*Hmat/2
 end
 
+@inline G(q, ::Val{true}) = G(q)
+@inline G(q, ::Val{false}) = I
+
 """
 Jacobian of `G(q)'b` wrt quaternion `q`, and `b` has length 4.
 """

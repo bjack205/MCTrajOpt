@@ -62,33 +62,6 @@ end
 zsol, = MC.ipopt_solve(prob, z0, tol=1e-4, goal_tol=1e-6)
 
 ## Test Jacobian
-rc = MOI.jacobian_structure(prob)
-row = [idx[1] for idx in rc]
-col = [idx[2] for idx in rc]
-jac = zeros(length(rc)) 
-jac0 = zeros(prob.m_nlp, prob.n_nlp)
-c = zeros(prob.m_nlp)
-
-MOI.eval_constraint_jacobian(prob, jac, z0)
-FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), z0)
-@test sparse(row, col, jac, prob.m_nlp, prob.n_nlp) ≈ jac0
-
-## Visualizer
-if !isdefined(Main, :vis)
-    vis = launchvis(model, x0)
-end
-visualize!(vis, model, Xref, opt)
-
-
-## Test functions
-grad_f = zeros(prob.n_nlp)
-c = zeros(prob.m_nlp)
-jac0 = zeros(prob.m_nlp, prob.n_nlp)
-rc = MOI.jacobian_structure(prob)
-row = [idx[1] for idx in rc]
-col = [idx[2] for idx in rc]
-jac = zeros(length(rc)) 
-
 ztest = zero(z0)
 Xtest = [MC.randstate(model) for k = 1:prob.N]
 Utest = [@SVector randn(2) for k = 1:prob.N-1]
@@ -101,26 +74,22 @@ for k = 1:prob.N
     end
 end
 
+rc = MOI.jacobian_structure(prob)
+row = [idx[1] for idx in rc]
+col = [idx[2] for idx in rc]
+jac = zeros(length(rc)) 
+jac0 = zeros(prob.m_nlp, prob.n_nlp)
+c = zeros(prob.m_nlp)
 
-J = MOI.eval_objective(prob, ztest)
-MOI.eval_objective_gradient(prob, grad_f, z0)
-MOI.eval_constraint(prob, c, z0)
-c0 = copy(c)
-
-MOI.eval_constraint_jacobian(prob, jac, z0)
-c0 .= 0
-FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), z0)
+MOI.eval_constraint_jacobian(prob, jac, ztest)
+FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), ztest)
 @test sparse(row, col, jac, prob.m_nlp, prob.n_nlp) ≈ jac0
-# @test c[end-2:end] ≈ zeros(3)
 
-zsol, = MC.ipopt_solve(prob, z0, tol=1e-4, goal_tol=1e-6)
-Xsol = [zsol[xi] for xi in prob.xinds]
-Usol = [zsol[ui] for ui in prob.uinds]
-
-visualize!(vis, model, Xsol, opt)
-norm(map(Xsol) do x
-    MC.joint_constraints(model, x)
-end)
+## Visualizer
+if !isdefined(Main, :vis)
+    vis = launchvis(model, x0)
+end
+visualize!(vis, model, Xref, opt)
 
 #############################################
 # Swing-up
@@ -152,7 +121,7 @@ R = Diagonal(SA_F64[1e-3, 1e-3])
 r_ee = SA[0,0,2.0]
 
 prob = MC.DoublePendulumMOI(model, opt, Qr, Qq, R, x0, Xref, rf=r_ee)
-prob.goalcon
+@test prob.goalcon
 
 # Create initial guess
 z0 = zeros(prob.n_nlp)

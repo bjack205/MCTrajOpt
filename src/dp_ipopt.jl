@@ -268,7 +268,9 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
         # J0[ci, uinds[k-1]] = ForwardDiff.jacobian(u->con(x1, x2, x3, u, u2, λ2), u1)
         # J0[ci, uinds[k]]   = ForwardDiff.jacobian(u->con(x1, x2, x3, u1, u, λ2), u2)
         # J0[ci, λinds[i]]   = ForwardDiff.jacobian(λ->con(x1, x2, x3, u1, u2, λ), λ2)
-        J0[ci, λinds[i]]   = h*errstate_jacobian(prob.model, x2)'∇joint_constraints(prob.model, x2)'
+        ∇joint_constraints!(prob.model, J0, x2, 
+            xi=ci[1], yi=λinds[i][1], s=h, errstate=Val(true), transpose=Val(true))
+        # J0[ci, λinds[i]]   = h*errstate_jacobian(prob.model, x2)'∇joint_constraints(prob.model, x2)'
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L
