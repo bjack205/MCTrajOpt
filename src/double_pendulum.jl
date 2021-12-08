@@ -456,64 +456,18 @@ end
 
 function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, u1, u2, h; yi=1)
     yview = view(y, (1:12) .+ (yi-1))
-    F1 = getwrenches(model, x1, u1)
-    F2 = getwrenches(model, x2, u2)
-
     yview .= 0
+
+    getwrenches!(model, yview, x1, u1)
+    getwrenches!(model, yview, x2, u2)
+    yview ./= 2
+
     jtvp_joint_constraints!(model, y, x2, λ, yi=yi)
     yview .*= h
-    yview .+= h*(F1 + F2)/2
+
     D2Ld!(model, y, x1, x2, h, yi=yi)
     D1Ld!(model, y, x2, x3, h, yi=yi)
     return
-
-    nL = 2
-    yview = view(y, (1:6*nL) .+ (yi-1))
-    @. yview = h*(F1 + F2)/2
-
-    ir = (1:3) .+ (yi-1)
-    iq = (4:6) .+ (yi-1)
-    p = 5
-    g = model.gravity
-    for j = 1:nL
-        body = j == 1 ? model.b1 : model.b2
-        m, J = body.mass, body.J
-        r1, r2, r3, = gettran(model, x1, j), gettran(model, x2, j), gettran(model, x3, j)
-        q1, q2, q3, = getquat(model, x1, j), getquat(model, x2, j), getquat(model, x3, j)
-        
-        # D1Ld
-        y[ir] .+= -m/h * (r3 - r2) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3
-
-        # D2Ld
-        y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
-
-        # @goto loopctr
-        # Joint constraints
-        joint = j == 1 ? model.joint0 : model.joint1
-        ir_1 = ir .- 6  # assumes DEL constraint is consecutive
-        iq_1 = iq .- 6
-        ir_2 = ir
-        iq_2 = iq
-        ci = (1:p) .+ (j-1)*p 
-
-        r_1, r_2 = gettran(model, x2, j-1), gettran(model, x2, j)
-        q_1, q_2 = getquat(model, x2, j-1), getquat(model, x2, j)
-
-        λj = view(λ, ci)
-        dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r_1, q_1, r_2, q_2, λj)
-        if (ir_1[1] - yi) > 0 
-            y[ir_1] .+= h*dr_1
-            y[iq_1] .+= h*G(q_1)'dq_1
-        end
-        y[ir_2] .+= h*dr_2
-        y[iq_2] .+= h*G(q_2)'dq_2
-
-        @label loopctr
-        ir = ir .+ 6
-        iq = iq .+ 6
-    end
 end
 
 function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h; 
@@ -644,7 +598,7 @@ function getwrenches!(model::DoublePendulum, ξ, x, u; yi=1)
 
         F_1, T_1 = wrench1(joint, r_1, q_1, r_2, q_2, u[j]) 
         F_2, T_2 = wrench2(joint, r_1, q_1, r_2, q_2, u[j]) 
-        if (ir_1[1] - (yi-1)) > 0
+        if (iF_1[1] - (yi-1)) > 0
             ξ[iF_1] .+= F_1
             ξ[iT_1] .+= T_1
         end

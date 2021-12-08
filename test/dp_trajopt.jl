@@ -91,7 +91,7 @@ end
 
 J = MOI.eval_objective(prob, ztest)
 MOI.eval_objective_gradient(prob, grad_f, z0)
-MOI.eval_constraint(prob, c, z0)
+MOI.eval_constraint(prob, c, ztest)
 
 jac .= 0
 MOI.eval_constraint_jacobian(prob, jac, ztest)
