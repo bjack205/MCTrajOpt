@@ -186,13 +186,13 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
         x3 = z[xinds[k+1]] 
 
         # Get the wrenches on each body as function of the control inputs
-        F1 = getwrenches(prob.model, x1, u1)
-        F2 = getwrenches(prob.model, x2, u2)
+        # F1 = getwrenches(prob.model, x1, u1)
+        # F2 = getwrenches(prob.model, x2, u2)
 
         # Compute the Discrete Euler-Lagrange constraint
         λ = z[λinds[i]]
         # c[ci] = DEL(prob.model, x1, x2, x3, λ, F1, F2, h)
-        DEL!(prob.model, c, x1, x2, x3, λ, F1, F2, h, yi=ci[1])
+        DEL!(prob.model, c, x1, x2, x3, λ, u1, u2, h, yi=ci[1])
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L
@@ -255,19 +255,19 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
         x3 = z[xinds[k+1]] 
 
         con(x1,x2,x3,u1,u2,λ) = begin
-            F1 = getwrenches(prob.model, x1, u1)
-            F2 = getwrenches(prob.model, x2, u2)
-            DEL(prob.model, x1, x2, x3, λ, F1, F2, h) 
+            # F1 = getwrenches(prob.model, x1, u1)
+            # F2 = getwrenches(prob.model, x2, u2)
+            DEL(prob.model, x1, x2, x3, λ, u1, u2, h) 
         end 
 
         # Compute the Discrete Euler-Lagrange constraint
         λ2 = z[λinds[i]]
-        # J0[ci, xinds[k-1]] = ForwardDiff.jacobian(x->con(x, x2, x3, u1, u2, λ2), x1)
-        # J0[ci, xinds[k]]   = ForwardDiff.jacobian(x->con(x1, x, x3, u1, u2, λ2), x2)
-        # J0[ci, xinds[k+1]] = ForwardDiff.jacobian(x->con(x1, x2, x, u1, u2, λ2), x3)
-        F1 = getwrenches(prob.model, x1, u1)
-        F2 = getwrenches(prob.model, x2, u2)
-        ∇DEL!(model, J0, x1, x2, x3, λ2, F1, F2, h, ix1=xinds[k-1], ix2=xinds[k], ix3=xinds[k+1], yi=ci[1])
+        J0[ci, xinds[k-1]] = ForwardDiff.jacobian(x->con(x, x2, x3, u1, u2, λ2), x1)
+        J0[ci, xinds[k]]   = ForwardDiff.jacobian(x->con(x1, x, x3, u1, u2, λ2), x2)
+        J0[ci, xinds[k+1]] = ForwardDiff.jacobian(x->con(x1, x2, x, u1, u2, λ2), x3)
+        # F1 = getwrenches(prob.model, x1, u1)
+        # F2 = getwrenches(prob.model, x2, u2)
+        # ∇DEL!(model, J0, x1, x2, x3, λ2, F1, F2, h, ix1=xinds[k-1], ix2=xinds[k], ix3=xinds[k+1], yi=ci[1])
         J0[ci, uinds[k-1]] = ForwardDiff.jacobian(u->con(x1, x2, x3, u, u2, λ2), u1)
         J0[ci, uinds[k]]   = ForwardDiff.jacobian(u->con(x1, x2, x3, u1, u, λ2), u2)
         J0[ci, λinds[i]]   = ForwardDiff.jacobian(λ->con(x1, x2, x3, u1, u2, λ), λ2)

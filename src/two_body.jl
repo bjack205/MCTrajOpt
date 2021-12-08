@@ -97,6 +97,19 @@ function wrench(joint::RevoluteJoint, x1, x2, u::Real)
     return ξ1, ξ2
 end
 
+function wrench1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
+    T1 = -joint.axis * u  # torque on body 1
+    F1 = SA_F64[0,0,0]
+    return F1, T1
+end
+
+function wrench2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real)
+    q21 = L(q_2)'q_1
+    T2 = Amat(q21)*joint.axis * u
+    F2 = SA_F64[0,0,0]
+    return F2, T2 
+end
+
 abstract type TwoBody end
 struct SpaceBar <: TwoBody 
     b1::RigidBody

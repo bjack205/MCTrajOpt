@@ -79,7 +79,7 @@ jac_struct
 
 ztest = zero(z0)
 Xtest = [MC.randstate(model) for k = 1:prob.N]
-Utest = [@SVector randn(2) for k = 1:prob.N-1]
+Utest = [@SVector randn(2) for k = 1:prob.N-1] .* 0
 λtest = [@SVector randn(prob.p) for k = 1:prob.N-1]
 for k = 1:prob.N
     ztest[prob.xinds[k]] = Xtest[k]
@@ -89,14 +89,13 @@ for k = 1:prob.N
     end
 end
 
-
 J = MOI.eval_objective(prob, ztest)
 MOI.eval_objective_gradient(prob, grad_f, z0)
 MOI.eval_constraint(prob, c, z0)
 
 jac .= 0
-MOI.eval_constraint_jacobian(prob, jac, z0)
-FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), z0)
+MOI.eval_constraint_jacobian(prob, jac, ztest)
+FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), ztest)
 @test sparse(row, col, jac, prob.m_nlp, prob.n_nlp) ≈ jac0
 length(row) / (prob.m_nlp * prob.n_nlp)
 prob.m_nlp

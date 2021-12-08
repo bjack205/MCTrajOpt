@@ -446,13 +446,19 @@ function ∇²joint_constraints(model::DoublePendulum, x, λ)
     [dr_1; dq_1; dr_2; dq_2]
 end
 
-function DEL(model::DoublePendulum, x1, x2, x3, λ, F1, F2, h)
+function DEL(model::DoublePendulum, x1, x2, x3, λ, u1, u2, h)
+    F1 = getwrenches(model, x1, u1)
+    F2 = getwrenches(model, x2, u2)
+
     D2Ld(model, x1, x2, h) + D1Ld(model, x2, x3, h) + h*(F1 + F2)/2 + 
         h*errstate_jacobian(model, x2)'∇joint_constraints(model, x2)'λ
 end
 
-function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, F1, F2, h; yi=1)
+function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, u1, u2, h; yi=1)
     yview = view(y, (1:12) .+ (yi-1))
+    F1 = getwrenches(model, x1, u1)
+    F2 = getwrenches(model, x2, u2)
+
     yview .= 0
     jtvp_joint_constraints!(model, y, x2, λ, yi=yi)
     yview .*= h
@@ -625,6 +631,49 @@ function getwrenches(model::DoublePendulum, x, u)
     ξ1_1, ξ1_2 = wrench(model.joint1, x_1, x_2, u[2])
     return [ξ0_1 + ξ1_1; ξ1_2]
 end
+
+function getwrenches!(model::DoublePendulum, ξ, x, u; yi=1)
+    for j = 1:2
+        joint = j == 1 ? model.joint0 : model.joint1
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        iF_1 = (1:3) .+ (j-2)*6  .+ (yi-1)
+        iT_1 = (4:6) .+ (j-2)*6  .+ (yi-1)
+        iF_2 = (1:3) .+ (j-1)*6  .+ (yi-1)
+        iT_2 = (4:6) .+ (j-1)*6  .+ (yi-1)
+
+        F_1, T_1 = wrench1(joint, r_1, q_1, r_2, q_2, u[j]) 
+        F_2, T_2 = wrench2(joint, r_1, q_1, r_2, q_2, u[j]) 
+        if (ir_1[1] - (yi-1)) > 0
+            ξ[iF_1] .+= F_1
+            ξ[iT_1] .+= T_1
+        end
+        ξ[iF_2] .+= F_2
+        ξ[iT_2] .+= T_2
+    end
+end
+
+function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, yi=1)
+    for j = 1:2
+        joint = j == 1 ? model.joint0 : model.joint1
+        r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
+        q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
+        iF_1 = (1:3) .+ (j-2)*6  .+ (yi-1)
+        iT_1 = (4:6) .+ (j-2)*6  .+ (yi-1)
+        iF_2 = (1:3) .+ (j-1)*6  .+ (yi-1)
+        iT_2 = (4:6) .+ (j-1)*6  .+ (yi-1)
+
+        F_1, T_1 = wrench1(joint, r_1, q_1, r_2, q_2, u[j]) 
+        F_2, T_2 = wrench2(joint, r_1, q_1, r_2, q_2, u[j]) 
+        if (ir_1[1] - (yi-1)) > 0
+            @view(jac[iF_1]) .+= F_1
+            @view(jac[iT_1]) .+= T_1
+        end
+        @view(jac[iF_2]) .+= F_2
+        @view(jac[iT_2]) .+= T_2
+    end
+end
+
 
 function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
     X = [zero(x0) for k = 1:params.N]
