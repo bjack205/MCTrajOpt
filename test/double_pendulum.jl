@@ -148,10 +148,26 @@ wjac = zeros(12, 16)
 @test MC.∇getwrenches!(model, wjac, xtest, utest) ≈ 
     ForwardDiff.jacobian(x->MC.getwrenches(model, x[1:14], x[15:16]), [xtest; utest])
 
+wjac2 = zeros(24, 32)
+MC.∇getwrenches!(model, wjac2, xtest, utest, ix=17:30, iu=31:32, yi=13) 
+wjac3 = ForwardDiff.jacobian(x->[zeros(12); MC.getwrenches(model, x[17:30], x[31:32])], [zeros(16); xtest; utest])
+@test wjac2 ≈ wjac3
+
+wjac2 = zeros(12, 32)
+MC.∇getwrenches!(model, wjac2, xtest, utest, ix=17:30, iu=31:32, yi=1) 
+wjac3 = ForwardDiff.jacobian(x->MC.getwrenches(model, x[17:30], x[31:32]), [zeros(16); xtest; utest])
+@test wjac2 ≈ wjac3
+
+wjac2 = zeros(24, 16)
+MC.∇getwrenches!(model, wjac2, xtest, utest, yi=13) 
+wjac3 = ForwardDiff.jacobian(x->[zeros(12); MC.getwrenches(model, x[1:14], x[15:16])], [xtest; utest])
+@test wjac2 ≈ wjac3
 
 ## DEL
 F1 = SA[0,0,0, 0,0,-1, 0,0,0, 0,0,1]
 F2 = copy(F1)
+u1 = @SVector randn(2)
+u2 = @SVector randn(2)
 λ = @SVector zeros(10)
 λtest = @SVector randn(10)
 x3test = x2test ⊕ dx 
@@ -175,37 +191,43 @@ MC.DEL!(model, del, x1test, x2test, x3test, λtest, F1, F2, h)
 
 ##
 ix1 = 1:14
+iu1 = 15:16
 ix2 = ix1 .+ 16
+iu2 = iu1 .+ 16
 ix3 = ix2 .+ 16
-iq2_1 = ix2[4:7]
-iq2_2 = ix2[(4:7) .+ 7]
-iq3_1 = ix3[4:7]
-iq3_2 = ix3[(4:7) .+ 7]
+# iq2_1 = ix2[4:7]
+# iq2_2 = ix2[(4:7) .+ 7]
+# iq3_1 = ix3[4:7]
+# iq3_2 = ix3[(4:7) .+ 7]
 
+##
 jac_ip = zeros(12,16*3-2)
 jac_op = zero(jac_ip)
-jac_an = zero(jac_op)
-delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
-delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h)
+jac_an = zero(jac_ip)
+delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h)
+delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h)
 
-z = [x1test; zeros(2); x2test; zeros(2); x3test]
+u1 = 1*@SVector randn(2)
+u2 = 1*@SVector randn(2)
+z = [x1test; u1; x2test; u2; x3test]
 delfun(del, z)
 @test delfun(z) ≈ del
 
-jac_op = FiniteDiff.finite_difference_jacobian(delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
-FiniteDiff.finite_difference_jacobian!(jac_ip, delfun, [x1test; zeros(2); x2test; zeros(2); x3test])
-MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, F1, F2, h)
+jac_op = FiniteDiff.finite_difference_jacobian(delfun, z)
+FiniteDiff.finite_difference_jacobian!(jac_ip, delfun, Vector(z))
+MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, u1, u2, h)
 @test jac_ip ≈ jac_op ≈ jac_an
 
-delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, F1, F2, h, yi=13)
+##
+delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h, yi=13)
 y = zeros(2*length(del))
 delfun2(y, z)
 jac_op = zeros(2*length(del), length(z))
 jac_ip = copy(jac_op)
 jac_an = copy(jac_op)
-FiniteDiff.finite_difference_jacobian!(jac_op, (y,x)->y[13:end] .= delfun(x), z)
-FiniteDiff.finite_difference_jacobian!(jac_ip, (y,x)->delfun2(y,x), z)
-MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, F1, F2, h, yi=13)
+FiniteDiff.finite_difference_jacobian!(jac_op, (y,x)->y[13:end] .= delfun(x), Vector(z))
+FiniteDiff.finite_difference_jacobian!(jac_ip, (y,x)->delfun2(y,x), Vector(z))
+MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, u1, u2, h, yi=13)
 @test jac_op ≈ jac_ip ≈ jac_an
 @test norm(jac_op[1:12,:],Inf) < 1e-12
 

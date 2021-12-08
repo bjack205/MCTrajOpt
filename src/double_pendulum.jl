@@ -470,8 +470,8 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, u1, u2, h; yi=1)
     return
 end
 
-function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h; 
-    ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16, yi=1
+function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, u1, u2, h; 
+    ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16, iu1=15:16, iu2=iu1 .+ 16, yi=1
 )
     # @. y = h*(F1 + F2)/2
     # D2Ld!(model, y, x1, x2, h)
@@ -482,6 +482,8 @@ function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h;
     # jac_x2 = view(jac, :, ix2)
     # ∇²joint_constraints!(model, jac_x2, x2, λ, errstate=Val(false))
     # jac_x2 .*= h
+    ∇getwrenches!(model, jac, x1, u1, ix=ix1, iu=iu1, yi=yi, s=h/2)
+    ∇getwrenches!(model, jac, x2, u2, ix=ix2, iu=iu2, yi=yi, s=h/2)
 
     # Joint Constraints
     hess = jac
@@ -608,7 +610,7 @@ function getwrenches!(model::DoublePendulum, ξ, x, u; yi=1)
     return ξ
 end
 
-function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi=1)
+function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi=1, s=1.0)
     for j = 1:2
         joint = j == 1 ? model.joint0 : model.joint1
         iu_j = iu[j]:iu[j]
@@ -624,53 +626,53 @@ function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi
         ir_2 = (1:3) .+ (j-1)*7 .+ (ix[1] - 1)
         iq_2 = (4:7) .+ (j-1)*7 .+ (ix[1] - 1)
 
-        F_1, T_1 = wrench1(joint, r_1, q_1, r_2, q_2, u[j]) 
-        F_2, T_2 = wrench2(joint, r_1, q_1, r_2, q_2, u[j]) 
-        if (ir_1[1] - (yi-1)) > 0
+        if (iF_1[1] - (yi-1)) > 0
+            println("Past 1st row")
             F_11 = ∇force11(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_1, ir_1]) .+= F_11[1]
-            @view(jac[iF_1, iq_1]) .+= F_11[2]
+            @view(jac[iF_1, ir_1]) .+= F_11[1] * s
+            @view(jac[iF_1, iq_1]) .+= F_11[2] * s
 
             F_12 = ∇force12(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_1, ir_2]) .+= F_12[1]
-            @view(jac[iF_1, iq_2]) .+= F_12[2]
+            @view(jac[iF_1, ir_2]) .+= F_12[1] * s
+            @view(jac[iF_1, iq_2]) .+= F_12[2] * s
 
             F_1u = ∇force1u(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_1, iu_j]) .+= F_1u
+            @view(jac[iF_1, iu_j]) .+= F_1u * s
 
             T_11 = ∇torque11(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iT_1, ir_1]) .+= T_11[1]
-            @view(jac[iT_1, iq_1]) .+= T_11[2]
+            @view(jac[iT_1, ir_1]) .+= T_11[1] * s
+            @view(jac[iT_1, iq_1]) .+= T_11[2] * s
 
             T_12 = ∇torque12(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iT_1, ir_2]) .+= T_12[1]
-            @view(jac[iT_1, iq_2]) .+= T_12[2]
+            @view(jac[iT_1, ir_2]) .+= T_12[1] * s
+            @view(jac[iT_1, iq_2]) .+= T_12[2] * s
 
             T_1u = ∇torque1u(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iT_1, iu_j]) .+= T_1u
+            @view(jac[iT_1, iu_j]) .+= T_1u * s
         end
         if (ir_1[1] - (ix[1] - 1)) > 0
+            println("Past 1st column")
             F_21 = ∇force21(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iF_2, ir_1]) .+= F_21[1]
-            @view(jac[iF_2, iq_1]) .+= F_21[2]
+            @view(jac[iF_2, ir_1]) .+= F_21[1] * s
+            @view(jac[iF_2, iq_1]) .+= F_21[2] * s
 
             T_21 = ∇torque21(joint, r_1, q_1, r_2, q_2, u[j])
-            @view(jac[iT_2, ir_1]) .+= T_21[1]
-            @view(jac[iT_2, iq_1]) .+= T_21[2]
+            @view(jac[iT_2, ir_1]) .+= T_21[1] * s
+            @view(jac[iT_2, iq_1]) .+= T_21[2] * s
         end
         F_22 = ∇force22(joint, r_1, q_1, r_2, q_2, u[j])
-        @view(jac[iF_2, ir_2]) .+= F_22[1]
-        @view(jac[iF_2, iq_2]) .+= F_22[2]
+        @view(jac[iF_2, ir_2]) .+= F_22[1] * s
+        @view(jac[iF_2, iq_2]) .+= F_22[2] * s
 
         F_2u = ∇force2u(joint, r_1, q_1, r_2, q_2, u[j])
-        @view(jac[iF_2, iu_j]) .+= F_2u
+        @view(jac[iF_2, iu_j]) .+= F_2u * s
 
         T_22 = ∇torque22(joint, r_1, q_1, r_2, q_2, u[j])
-        @view(jac[iT_2, ir_2]) .+= T_22[1]
-        @view(jac[iT_2, iq_2]) .+= T_22[2]
+        @view(jac[iT_2, ir_2]) .+= T_22[1] * s
+        @view(jac[iT_2, iq_2]) .+= T_22[2] * s
 
         T_2u = ∇torque2u(joint, r_1, q_1, r_2, q_2, u[j])
-        @view(jac[iT_2, iu_j]) .+= T_2u
+        @view(jac[iT_2, iu_j]) .+= T_2u * s
     end
     return jac
 end
