@@ -181,32 +181,36 @@ iu1 = 15:16
 ix2 = ix1 .+ 16
 iu2 = iu1 .+ 16
 ix3 = ix2 .+ 16
+iy = ix3[end] .+ (1:10)
 
-jac_ip = zeros(12,16*3-2)
+jac_ip = zeros(12,16*3-2 + 10)
 jac_op = zero(jac_ip)
 jac_an = zero(jac_ip)
-delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h)
-delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h)
+delfun(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], x[iy], x[iu1], x[iu2], h)
+delfun(x) = MC.DEL(model, x[ix1], x[ix2], x[ix3], x[iy], x[iu1], x[iu2], h)
 
-z = Vector([x1test; u1test; x2test; u2test; x3test])
+z = Vector([x1test; u1test; x2test; u2test; x3test; λtest])
 delfun(del, z)
 @test delfun(z) ≈ del
 
 jac_op = FiniteDiff.finite_difference_jacobian(delfun, z) 
 FiniteDiff.finite_difference_jacobian!(jac_ip, delfun, z)
 jac_an .= 0
-MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, u1test, u2test, h)
+MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, u1test, u2test, h, λi=iy[1])
 @test jac_ip ≈ jac_op atol=1e-6
-@test jac_ip ≈ jac_an atol=1e-6
+@test jac_ip ≈ jac_an atol=1e-5
 
-delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], λtest, x[iu1], x[iu2], h, yi=13)
+delfun2(y,x) = MC.DEL!(model, y, x[ix1], x[ix2], x[ix3], x[iy], x[iu1], x[iu2], h, yi=13)
 y = zeros(2*length(del))
 delfun2(y, z)
 jac_op = zeros(2*length(del), length(z))
 jac_ip = zero(jac_op)
+jac_an = zero(jac_ip)
 FiniteDiff.finite_difference_jacobian!(jac_op, (y,x)->y[13:end] .= delfun(x), z)
 FiniteDiff.finite_difference_jacobian!(jac_ip, (y,x)->delfun2(y,x), z)
+MC.∇DEL!(model, jac_an, x1test, x2test, x3test, λtest, u1test, u2test, h, λi=iy[1], yi=13)
 @test jac_op ≈ jac_ip
+@test jac_op ≈ jac_an
 @test norm(jac_op[1:12,:],Inf) < 1e-12
 
 ##

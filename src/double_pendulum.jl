@@ -37,7 +37,6 @@ function kinetic_energy(model::DoublePendulum, x, v)
         T += 0.5*(body.mass*ν'ν + ω'body.J*ω)
     end
     return T
-    # 0.5 * v'mass_matrix(model)*v
 end
 
 function potential_energy(model::DoublePendulum, x)
@@ -49,11 +48,6 @@ function potential_energy(model::DoublePendulum, x)
         U += g*body.mass*r[3]
     end
     return U
-    # r_1, r_2 = gettran(model, x)
-    # m1 = model.b1.mass
-    # m2 = model.b2.mass
-    # g = model.gravity
-    # return g*(m1*r_1[3] + m2*r_2[3])
 end
 
 function ∇potential_energy(model::DoublePendulum, x)
@@ -79,19 +73,11 @@ function midpoint(model::DoublePendulum, x1, x2, h)
     r2_1, r2_2 = gettran(model, x2)
     r_1, v_1 = midpoint_lin(model.b1, r1_1, r2_1, h)
     r_2, v_2 = midpoint_lin(model.b2, r1_2, r2_2, h)
-    # r_1 = (r1_1 + r2_1)/2
-    # r_2 = (r1_2 + r2_2)/2
-    # v_1 = (r2_1 - r1_1)/h
-    # v_2 = (r2_2 - r1_2)/h
 
     q1_1, q1_2 = getquat(model, x1)
     q2_1, q2_2 = getquat(model, x2)
     q_1, ω_1 = midpoint_rot(model.b1, q1_1, q2_1, h)
     q_2, ω_2 = midpoint_rot(model.b2, q1_2, q2_2, h)
-    # q_1 = q1_1
-    # q_2 = q1_2
-    # ω_1 = 2*Hmat'L(q1_1)'q2_1/h
-    # ω_2 = 2*Hmat'L(q1_2)'q2_2/h
     
     x = [r_1; q_1; r_2; q_2]
     v = [v_1; ω_1; v_2; ω_2]
@@ -129,8 +115,6 @@ function D2midpoint(model, x1, x2, h)
     d1v = blockdiag(d1v_1, d1v_2)
     return d1x, d1v
 end
-
-const SCALING = 2
 
 function D1Ld!(model::DoublePendulum, y, x1, x2, h; yi=1)
     ir = (1:3) .+ (yi-1)
@@ -234,7 +218,6 @@ function D2Ld(model::DoublePendulum, x1, x2, h)
     q1_1, q1_2 = getquat(model, x1)
     q2_1, q2_2 = getquat(model, x2)
     g = model.gravity
-    # s = SCALING
     [
         m_1/h * (r2_1-r1_1) - h*m_1*g*SA[0,0,1]/2
         4/h * G(q2_1)'L(q1_1)*Hmat * J_1 * Hmat'L(q1_1)'q2_1
@@ -351,9 +334,7 @@ function ∇joint_constraints!(model::DoublePendulum, jac, x; errstate=Val(false
         dotran(A, ::Val{false}) = A
 
         dr_1, dq_1, dr_2, dq_2 = ∇joint_constraint(joint, r_1, q_1, r_2, q_2)
-        # println("ci = $(ci), xinds = $(ir_1[1]):$(iq_2[end])")
         if (ir_1[1] - (yi-1)) > 0
-            # println("processed prev state")
             @view(jac[idx(ci, ir_1)...]) .+= dotran(dr_1) * s
             @view(jac[idx(ci, iq_1)...]) .+= dotran(dq_1 * G(q_1, errstate)) * s
         end
@@ -507,8 +488,6 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, u1, u2, h; yi=1)
         y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
         y[iq] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
 
-        # @goto loopctr
-        # Joint constraints
         joint = j == 1 ? model.joint0 : model.joint1
         ir_1 = ir .- 6  # assumes DEL constraint is consecutive
         iq_1 = iq .- 6
@@ -528,24 +507,14 @@ function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, u1, u2, h; yi=1)
         y[ir_2] .+= h*dr_2
         y[iq_2] .+= h*G(q_2)'dq_2
 
-        @label loopctr
         ir = ir .+ 6
         iq = iq .+ 6
     end
 end
 
 function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, u1, u2, h; 
-    ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16, iu1=15:16, iu2=iu1 .+ 16, yi=1
+    ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16, iu1=15:16, iu2=iu1 .+ 16, yi=1, λi=iu2[end]+1
 )
-    # @. y = h*(F1 + F2)/2
-    # D2Ld!(model, y, x1, x2, h)
-    # D1Ld!(model, y, x2, x3, h)
-    # jtvp_joint_constraints!(model, y, x2, λ)
-    # Jcon = errstate_jacobian(model, x2)'∇²joint_constraints(model, x2, λ) + 
-    #     ∇errstate_jacobian(model, x2, jtvp_joint_constraints(model, x2, λ))
-    # jac_x2 = view(jac, :, ix2)
-    # ∇²joint_constraints!(model, jac_x2, x2, λ, errstate=Val(false))
-    # jac_x2 .*= h
     ∇getwrenches!(model, jac, x1, u1, ix=ix1, iu=iu1, yi=yi, s=h/2)
     ∇getwrenches!(model, jac, x2, u2, ix=ix2, iu=iu2, yi=yi, s=h/2)
 
@@ -585,9 +554,6 @@ function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, u1, u2, h;
         ir_1 = ir_1 .+ 6
         iϕ_1 = iϕ_1 .+ 6
     end
-    # jac_x2 = view(jac, :, ix2)
-    # jac_x2 .*= h
-
 
     # Discrete Legendre Transforms
     ir = (1:3) .+ (yi-1)
@@ -622,6 +588,10 @@ function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, u1, u2, h;
         ir = ir .+ 6
         iq = iq .+ 6
     end
+
+    # Derivative wrt multiplier
+    ∇joint_constraints!(model, jac, x2, 
+        xi=yi, yi=λi, s=h, errstate=Val(true), transpose=Val(true))
 
     return
 end
@@ -763,8 +733,6 @@ function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=
         λ = @SVector zeros(10)
 
         for i = 1:newton_iters
-            # F1 = getwrenches(model, X[k-1], U[k-1])
-            # F2 = getwrenches(model, X[k], U[k])
             u1 = U[k-1]
             u2 = U[k]
 
@@ -779,8 +747,6 @@ function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=
             D = ForwardDiff.jacobian(x3->DEL(model, X[k-1], X[k], x3, λ, u1, u2, h), X[k+1]) * errstate_jacobian(model, X[k+1])
             C2 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k])
             C3 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k+1])
-            # C2 = ∇joint_constraints(model, X[k]) * errstate_jacobian(model, X[k])
-            # C3 = ∇joint_constraints(model, X[k+1]) * errstate_jacobian(model, X[k+1])
             H = [D h*C2']
             H = [H; [C3 @SMatrix zeros(10,10)]]
             Δ = -(H\e)

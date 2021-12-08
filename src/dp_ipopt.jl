@@ -86,45 +86,6 @@ function initialize_sparsity!(prob::DoublePendulumMOI)
     MOI.eval_constraint_jacobian(prob, jac, z)
     blocks.initializing = false 
     return
-
-    # Discrete Euler-Lagrange (dynamics) constraints
-    ci = 1:6*prob.L
-    for (i,k) in enumerate(2:prob.N-1)
-        setblock!(blocks, ci, xinds[k-1])
-        setblock!(blocks, ci, xinds[k])
-        setblock!(blocks, ci, xinds[k+1])
-        setblock!(blocks, ci, uinds[k-1])
-        setblock!(blocks, ci, uinds[k])
-        setblock!(blocks, ci, λinds[i])
-        ci = ci .+ 6*prob.L
-        off += 6*prob.L
-    end
-
-    # Joint constraints
-    ci = off .+ (1:prob.p)
-    for (i,k) in enumerate(2:prob.N)  # assume the initial configuration is feasible
-        setblock!(blocks, ci, xinds[k])
-        ci = ci .+ prob.p
-        off += prob.p
-    end
-
-    # Quaternion norm constraints
-    ci = off .+ 1
-    for (i,k) in enumerate(2:prob.N)
-        L = prob.L
-        for j = 1:L
-            setblock!(blocks, ci:ci, qinds[k,j])
-            ci += 1
-        end
-        off += L
-    end
-
-    if prob.goalcon
-        ci = off .+ (1:3)
-        setblock!(blocks, ci, rinds[prob.N,2])
-        setblock!(blocks, ci, qinds[prob.N,2])
-    end
-    return
 end
 
 function MOI.eval_objective(prob::DoublePendulumMOI, z)
@@ -143,16 +104,6 @@ function MOI.eval_objective(prob::DoublePendulumMOI, z)
             dq = q - qref
             J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
         end
-        # r_1, r_2 = Z[rinds[k,1]], Z[rinds[k,2]]
-        # q_1, q_2 = Z[qinds[k,1]], Z[qinds[k,2]]
-        # xref = prob.Xref[k]
-        # rref_1, rref_2 = gettran(prob.model, xref)
-        # qref_1, qref_2 = getquat(prob.model, xref)
-
-        # dr_1, dr_2 = r_1 - rref_1, r_2 - rref_2 
-        # dq_1, dq_2 = q_1 - qref_1, q_2 - qref_2 
-        # J += 0.5 * (dr_1'prob.Qr*dr_1 + dq_1'prob.Qq*dq_1)
-        # J += 0.5 * (dr_2'prob.Qr*dr_2 + dq_2'prob.Qq*dq_2)
         if k < prob.N
             u = z[uinds[k]]
             J += 0.5 * u'prob.R*u
@@ -185,14 +136,9 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
         u2 = z[uinds[k]]
         x3 = z[xinds[k+1]] 
 
-        # Get the wrenches on each body as function of the control inputs
-        F1 = getwrenches(prob.model, x1, u1)
-        F2 = getwrenches(prob.model, x2, u2)
-
         # Compute the Discrete Euler-Lagrange constraint
         λ = z[λinds[i]]
-        c[ci] = DEL(prob.model, x1, x2, x3, λ, u1, u2, h)
-        # DEL!(prob.model, c, x1, x2, x3, λ, F1, F2, h, yi=ci[1])
+        DEL!(prob.model, c, x1, x2, x3, λ, u1, u2, h, yi=ci[1])
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L
@@ -229,9 +175,6 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
 end
 
 function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
-    # J0 = reshape(jac, prob.m_nlp, prob.n_nlp)
-    # c = zeros(eltype(x), prob.m_nlp)
-    # ForwardDiff.jacobian!(J0, (c,z)->MOI.eval_constraint(prob, c, z), c, x)
     jac .= 0
     J0 = NonzerosVector(jac, prob.blocks)
 
@@ -252,25 +195,10 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
         u2 = z[uinds[k]]
         x3 = z[xinds[k+1]] 
 
-        con(x1,x2,x3,u1,u2,λ) = begin
-            # F1 = getwrenches(prob.model, x1, u1)
-            # F2 = getwrenches(prob.model, x2, u2)
-            DEL(prob.model, x1, x2, x3, λ, u1, u2, h) 
-        end 
-
         # Compute the Discrete Euler-Lagrange constraint
         λ2 = z[λinds[i]]
         ∇DEL!(prob.model, J0, x1, x2, x3, λ2, u1, u2, h, 
-            ix1=xinds[k-1], ix2=xinds[k], ix3=xinds[k+1], iu1=uinds[k-1], iu2=uinds[k], yi=ci[1])
-        # J0[ci, xinds[k-1]] = ForwardDiff.jacobian(x->con(x, x2, x3, u1, u2, λ2), x1)
-        # J0[ci, xinds[k]]   = ForwardDiff.jacobian(x->con(x1, x, x3, u1, u2, λ2), x2)
-        # J0[ci, xinds[k+1]] = ForwardDiff.jacobian(x->con(x1, x2, x, u1, u2, λ2), x3)
-        # J0[ci, uinds[k-1]] = ForwardDiff.jacobian(u->con(x1, x2, x3, u, u2, λ2), u1)
-        # J0[ci, uinds[k]]   = ForwardDiff.jacobian(u->con(x1, x2, x3, u1, u, λ2), u2)
-        # J0[ci, λinds[i]]   = ForwardDiff.jacobian(λ->con(x1, x2, x3, u1, u2, λ), λ2)
-        ∇joint_constraints!(prob.model, J0, x2, 
-            xi=ci[1], yi=λinds[i][1], s=h, errstate=Val(true), transpose=Val(true))
-        # J0[ci, λinds[i]]   = h*errstate_jacobian(prob.model, x2)'∇joint_constraints(prob.model, x2)'
+            ix1=xinds[k-1], ix2=xinds[k], ix3=xinds[k+1], iu1=uinds[k-1], iu2=uinds[k], yi=ci[1], λi=λinds[i][1])
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L
@@ -280,7 +208,6 @@ function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
     ci = off .+ (1:prob.p)
     for (i,k) in enumerate(2:prob.N)  # assume the initial configuration is feasible
         x = z[xinds[k]]
-        # J0[ci, xinds[k]] = ∇joint_constraints(prob.model, x)
         ∇joint_constraints!(prob.model, J0, x, xi=ci[1], yi=xinds[k][1])
         ci = ci .+ prob.p
         off += prob.p
@@ -314,15 +241,12 @@ MOI.initialize(prob::DoublePendulumMOI, features) = nothing
 
 function MOI.jacobian_structure(prob::DoublePendulumMOI) 
     return getrc(prob.blocks)
-    # return vec(Tuple.(CartesianIndices((prob.m_nlp,prob.n_nlp))))
 end
 
 function ipopt_solve(prob::DoublePendulumMOI, x0; tol=1e-6, c_tol=1e-6, max_iter=1_000, goal_tol=1e-2)
 
     n_nlp = prob.n_nlp 
     m_nlp = prob.m_nlp 
-    # x_l, x_u = prob.x_lb, prob.x_ub
-    # c_l, c_u = prob.c_lb, prob.c_ub
     
     x_l = fill(-Inf,n_nlp)
     x_u = fill(+Inf,n_nlp)
