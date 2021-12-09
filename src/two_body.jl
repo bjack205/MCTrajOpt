@@ -65,10 +65,39 @@ function compose_states(model::TwoBody, x1, x2)
     [x31; x32]
 end
 
+function compose_states!(model::TwoBody, x3, x1, x2)
+    for j = 1:2
+        ri = getrind(model, j)
+        qi = getqind(model, j)
+        r1 = gettran(model, x1, j)
+        r2 = gettran(model, x2, j)
+        q1 = getquat(model, x1, j)
+        q2 = getquat(model, x2, j)
+
+        # @show q1
+        # @show q2
+        x3[ri] = r1 + r2
+        x3[qi] = L(q1)*q2
+    end
+    return x3
+end
+
 function err2fullstate(model::TwoBody, x)
     e1,e2 = splitvel(model, x)
     x1,x2 = err2fullstate(e1), err2fullstate(e2)
     [x1; x2]
+end
+
+function err2fullstate!(model::TwoBody, x, e)
+    for j = 1:2
+        ri = getrind(model, j)
+        qi = getqind(model, j)
+        dr = getlinvel(model, e, j)
+        dϕ = getangvel(model, e, j)
+        x[ri] = dr 
+        x[qi] = cayleymap(dϕ)
+    end
+    return x
 end
 
 function errstate_jacobian(model::TwoBody, x)

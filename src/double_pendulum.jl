@@ -554,6 +554,54 @@ function ∇DEL!(model::DoublePendulum, jac, x1, x2, x3, λ, u1, u2, h;
     return jac
 end
 
+function ∇DEL3!(model::DoublePendulum, jac, x1, x2, x3, λ, F1, F2, h; yi=1)
+    # Discrete Legendre Transforms
+    ir = (1:3) .+ (yi-1)
+    iq = (4:6) .+ (yi-1)
+    M = 2  # number of links
+    p = 5
+    g = model.gravity
+    for j = 1:2
+        body = j == 1 ? model.b1 : model.b2
+        m, J = body.mass, body.J
+        # r1, r2, r3,   = gettran(model, x1, j), gettran(model, x2, j), gettran(model, x3, j)
+        q1, q2, q3,   = getquat(model, x1, j), getquat(model, x2, j), getquat(model, x3, j)
+        # ir1, iq1 = ix1[getrind(model, j)], ix1[getqind(model, j)]
+        # ir2, iq2 = ix2[getrind(model, j)], ix2[getqind(model, j)]
+        # ir3, iq3 = ix3[getrind(model, j)], ix3[getqind(model, j)]
+        ir3 = getrind(model, j)
+        iq3 = getqind(model, j)
+        
+        # D1Ld
+        # @view(jac[ir, ir2]) .+= +m/h * I3
+        @view(jac[ir, ir]) .+= -m/h * I3
+        # @view(jac[iq, iq2]) .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'R(q3)*Tmat + 
+        #     4/h * ∇G(q2, Tmat*R(q3)'Hmat * J * Hmat'L(q2)'q3)
+        @view(jac[iq, iq]) .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'G(q3) + 
+            4/h * G(q2)'Tmat*L(Hmat * J * Hmat'L(q2)'q3) * Tmat*G(q3)
+
+        # D2Ld
+        # @view(jac[ir, ir1]) .+= -m/h * I3
+        # @view(jac[ir, ir2]) .+= +m/h * I3
+        # @view(jac[iq, iq1]) .+= 4/h * G(q2)'R(Hmat * J * Hmat'L(q1)'q2) + 
+        #     4/h * G(q2)'L(q1)*Hmat * J * Hmat'R(q2)*Tmat
+        # @view(jac[iq, iq2]) .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)' + 
+        #     4/h * ∇G(q2, L(q1)*Hmat * J * Hmat'L(q1)'q2)
+
+        ir = ir .+ 6
+        iq = iq .+ 6
+    end
+
+    # Derivative wrt multiplier
+    ∇joint_constraints!(model, jac, x2, 
+        xi=yi, yi=6*M+1, s=h, errstate=Val(true), transpose=Val(true))
+
+    # Joint constraints at next time step
+    ∇joint_constraints!(model, jac, x3,
+        xi=yi+6*M, yi=1, errstate=Val(true))
+    return jac
+end
+
 function ∇DEL(model::DoublePendulum, x1, x2, x3, λ, F1, F2,h)
     dx1_2, dx2_2 = ∇D2Ld(model, x1, x2, h)
     dx2_1, dx3_1 = ∇D1Ld(model, x2, x3, h)
@@ -677,39 +725,57 @@ function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi
 end
 
 function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
-    X = [zero(x0) for k = 1:params.N]
+    X = [MVector(zero(x0)) for k = 1:params.N]
     X[1] = x0
     X[2] = x0
-    xi = SVector{12}(1:12)
-    yi = SVector{10}(13:22)
+    M = 2
+    p = 10
+    edim = 6M + p
+    Δx = zero(X[1])
+
+    xi = SVector{6M}(1:6M)
+    yi = SVector{10}(6M .+ (1:p))
+    e = zeros(edim)
+    econ = view(e, 6M .+ (1:p))
+    H = zeros(edim, edim)
 
     for k = 2:params.N-1
         h = params.h
 
         # Initial guess
-        X[k+1] = X[k]
+        X[k+1] .= X[k]
         λ = @SVector zeros(10)
 
         for i = 1:newton_iters
             u1 = U[k-1]
             u2 = U[k]
 
-            e1 = DEL(model, X[k-1], X[k], X[k+1], λ, u1,u2, h)
-            e2 = joint_constraints(model, X[k+1])
-            e = [e1; e2]
+            DEL!(model, e, X[k-1], X[k], X[k+1], λ, u1,u2, h)
+            joint_constraints!(model, econ, X[k+1])
+            # e1 = DEL(model, X[k-1], X[k], X[k+1], λ, u1,u2, h)
+            # e2 = joint_constraints(model, X[k+1])
+            # e = [e1; e2]
             if norm(e, Inf) < tol
                 # println("Converged in $i iters at time $(params.thist[k])")
                 break
             end
             # D = ∇DEL3(model, X[k-1], X[k], X[k+1], λ, F[k-1],F[k], h)
-            D = ForwardDiff.jacobian(x3->DEL(model, X[k-1], X[k], x3, λ, u1, u2, h), X[k+1]) * errstate_jacobian(model, X[k+1])
-            C2 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k])
-            C3 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k+1])
-            H = [D h*C2']
-            H = [H; [C3 @SMatrix zeros(10,10)]]
+            H .= 0
+            ∇DEL3!(model, H, X[k-1], X[k], X[k+1], λ, u1, u2, h)
+            # D = ForwardDiff.jacobian(x3->DEL(model, X[k-1], X[k], x3, λ, u1, u2, h), X[k+1]) * errstate_jacobian(model, X[k+1])
+            # C2 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k])
+            # C3 = ForwardDiff.jacobian(x->joint_constraints(model, x), X[k]) * errstate_jacobian(model, X[k+1])
+            # H = [D h*C2']
+            # H = [H; [C3 @SMatrix zeros(10,10)]]
             Δ = -(H\e)
-            Δx = err2fullstate(model, Δ[xi]) 
-            X[k+1] = compose_states(model, X[k+1], Δx)
+            # Δx = err2fullstate(model, Δ[xi]) 
+            err2fullstate!(model, Δx, Δ[xi])
+            # xnext = compose_states(model, X[k+1], Δx) 
+            # X[k+1] .= xnext
+            compose_states!(model, X[k+1], X[k+1], Δx)
+            # @show X[k+1] ≈ xnext 
+            # X[k+1] = xnew
+            # X[k+1] = xnext 
             λ += Δ[yi]
 
             if i == newton_iters

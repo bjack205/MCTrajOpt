@@ -224,8 +224,58 @@ d21, d22 = MC.∇D2Ld(model, x1test, x2test, h)
 @test norm(d21 - hess[13:24,1:12], Inf) < 1e-5
 @test norm(d22 - hess[13:24,13:24], Inf) < 1e-5
 
+##
+X = [MC.randstate(model) for k = 1:3]
+λ = @SVector randn(10)
+u1 = @SVector randn(2)
+u2 = @SVector randn(2)
+h = 0.01
+e1 = MC.DEL(model, X[1], X[2], X[3], λ, u1,u2, h)
+e2 = MC.joint_constraints(model, X[3])
+
+D = ForwardDiff.jacobian(
+    x3->MC.DEL(model, X[1], X[2], x3, λ, u1, u2, h), X[3]
+) * MC.errstate_jacobian(model, X[3])
+C2 = ForwardDiff.jacobian(
+    x->MC.joint_constraints(model, x), X[2]
+) * MC.errstate_jacobian(model, X[2])
+C3 = ForwardDiff.jacobian(
+    x->MC.joint_constraints(model, x), X[3]
+) * MC.errstate_jacobian(model, X[3])
+
+H = [[D h*C2']; [C3 @SMatrix zeros(10,10)]]
+H0 = zeros(22,22)
+MC.∇DEL3!(model, H0, X[1], X[2], X[3], λ, u1, u2, h)
+@test H0[1:12, 1:12] ≈ D
+@test H0[1:12, 13:end] ≈ h*C2'
+@test H0[13:end, 1:12] ≈ C3
+@test H0[13:end, 13:end] ≈ zeros(10,10)
+
+x1 = Vector(X[1])
+x2 = Vector(X[2])
+x1[4:7]
+x2[4:7]
+xnew = MC.compose_states(model, x1, x2)
+MC.compose_states!(model, x2, x1, x2)
+x2 ≈ xnew
+
+@test MC.compose_states!(model, x3, X[1], X[2]) ≈ MC.compose_states(model, X[1], X[2])
+x3 ≈ MC.compose_states(model, X[1], X[2])
+
+e = @SVector randn(12)
+x = zeros(14)
+@test MC.err2fullstate!(model, x, e) ≈ MC.err2fullstate(model, e)
+
+sim = SimParams(1.0, 0.01)
+torques(t) = SA[2.0; 1.0]
+U = torques.(sim.thist)
+x0 = MC.min2max(model, [0,0])
+Xsim = MC.simulate(model, sim, U, x0)
+xf = [0.07260593608185915, 0.0, 0.49470029113190483, 0.9973466253673305, 0.0, 0.07279909936535132, 0.0, 0.3108077970123134, 0.0, 1.4611823005124693, 0.985789895590613, 0.0, 0.16798298054104469, 0.0]
+@test Xsim[end] ≈ xf
 
 ##
+
 
 # ## Simulation
 # sim = SimParams(1.0, 0.01)
