@@ -27,6 +27,7 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     function ArmMOI(model::RobotArm, params::SimParams, Qr, Qq, R, x0, Xref; 
         rf = nothing, p_ee = SA[0,0,0.5]
     )
+        @assert size(R,1) == model.numlinks
         N = params.N
         L = model.numlinks 
         n = 7 * L                               # states
@@ -104,7 +105,7 @@ function MOI.eval_objective(prob::ArmMOI, z)
             # dq = q - qref
             # J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
             dq = q'qref
-            J += 0.5 * (dr'prob.Qr*dr + min(1+dq, 1-dq) * 1)
+            J += 0.5 * (dr'prob.Qr*dr + min(1+dq, 1-dq) * 2.0)
         end
         if k < prob.N
             u = z[uinds[k]]
