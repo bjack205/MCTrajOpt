@@ -6,9 +6,10 @@ struct RobotArm
     numlinks::Int
     slink::Int  # spacing between links
     stime::Int  # spacing between time steps
-    function RobotArm(geom::Vector{CylindricalBody}, joints::Vector{RevoluteJoint}; gravity::Bool=false)
+    function RobotArm(geom::Vector{CylindricalBody}, joints::Vector{RevoluteJoint}; 
+            gravity::Bool=false, links=RigidBody.(geom)
+        )
         @assert length(geom) == length(joints)
-        links = RigidBody.(geom)
         numlinks = length(links)
         g = gravity ? 9.81 : 0.0
         slink = 1
@@ -22,6 +23,9 @@ numconstraints(arm::RobotArm) = sum(numconstraints.(arm.joints))
 # State extraction
 basetran(model::RobotArm) = SA[0,0,0.]
 basequat(model::RobotArm) = SA[1,0,0,0.]
+
+getstate(body::RobotArm, x, j) = 
+    j == 0 ? [basetran(body); basequat(body)] : x[SA[1,2,3,4,5,6,7] .+ (j-1)*7*body.slink]
 
 getrind(body::RobotArm, j, k=1) = SA[1,2,3] .+ (j-1)*7*body.slink .+ (k-1)*7*body.stime
 getqind(body::RobotArm, j, k=1) = SA[4,5,6,7] .+ (j-1)*7*body.slink .+ (k-1)*7*body.stime
@@ -118,9 +122,14 @@ function D1Ld!(model::RobotArm, y, x1, x2, h; yi=1)
         m, J = body.mass, body.J
         r1, r2 = gettran(model, x1, j), gettran(model, x2, j)
         q1, q2 = getquat(model, x1, j), getquat(model, x2, j)
+
+        ∇U_tran = m*g*SA[0,0,1]
+        ∇U_quat = m*g*SA[0,0,1]
+        y[ir] .+= D1Ld_tran(body, r1, r2, ∇U_tran, h)
+        y[iq] .+= D1Ld_quat(body, q1, q2, ∇U_quat, h)
         
-        y[ir] .+= -m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= 4/h * G(q1)'Tmat*R(q2)'Hmat * J * Hmat'L(q1)'q2
+        # y[ir] .+= -m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
+        # y[iq] .+= 4/h * G(q1)'Tmat*R(q2)'Hmat * J * Hmat'L(q1)'q2
         ir = ir .+ 6
         iq = iq .+ 6
     end
@@ -136,9 +145,14 @@ function D2Ld!(model::RobotArm, y, x1, x2, h; yi=1)
         m, J = body.mass, body.J
         r1, r2 = gettran(model, x1, j), gettran(model, x2, j)
         q1, q2 = getquat(model, x1, j), getquat(model, x2, j)
+
+        ∇U_tran = m*g*SA[0,0,1]
+        ∇U_quat = m*g*SA[0,0,1]
+        y[ir] .+= D2Ld_tran(body, r1, r2, ∇U_tran, h)
+        y[iq] .+= D2Ld_quat(body, q1, q2, ∇U_quat, h)
         
-        y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
-        y[iq] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
+        # y[ir] .+= m/h * (r2 - r1) - h*m*g*SA[0,0,1]/2
+        # y[iq] .+= 4/h * G(q2)'L(q1)*Hmat * J * Hmat'L(q1)'q2
         ir = ir .+ 6
         iq = iq .+ 6
     end
@@ -334,6 +348,108 @@ function DEL!(model::RobotArm, y, x1, x2, x3, λ, u1, u2, h; yi=1)
     return y
 end
 
+
+function DEL_body!(body::RigidBody, joint::RevoluteJoint, ∇U_tran, ∇U_quat, 
+    x1_1, x2_1, x1_2, x2_2, x3_2, λ, u1, u2, h
+)
+    m, J = body.mass, body.J
+
+    ri = SA[1,2,3]
+    qi = SA[4,5,6,7]
+
+    r1_1, r1_2 = x1_1[ri], x1_2[ri]  # previous time
+    q1_1, q1_2 = x1_1[qi], x1_2[qi] 
+
+    r2_1, r2_2 = x2_1[ri], x2_2[ri]  # current time
+    q2_1, q2_2 = x2_1[qi], x2_2[qi] 
+
+    r3_2 = x3_2[ri]                  # next time
+    q3_2 = x3_2[qi] 
+
+    # Get wrenches
+    F1_1, T1_1 = wrench1(joint, r1_1, q1_1, r1_2, q1_2, u1)  # previous time, previous link
+    F1_2, T1_2 = wrench2(joint, r1_1, q1_1, r1_2, q1_2, u1)  # previous time, current link
+    F2_1, T2_1 = wrench1(joint, r2_1, q2_1, r2_2, q2_2, u2)  # current time, previous link
+    F2_2, T2_2 = wrench2(joint, r2_1, q2_1, r2_2, q2_2, u2)  # current time, current link
+
+    # Constraints
+    p = numconstraints(joint)
+    dr_1, dq_1, dr_2, dq_2 = jtvp_joint_constraint(joint, r2_1, q2_1, r2_2, q2_2, λ)
+
+    # D2Ld 
+    p2_lin = D2Ld_tran(body, r1_2, r2_2, ∇U_tran, h)
+    p2_ang = D2Ld_quat(body, q1_2, q2_2, ∇U_quat, h)
+
+    # D1Ld
+    p1_lin = D1Ld_tran(body, r2_2, r3_2, ∇U_tran, h)
+    p1_ang = D1Ld_quat(body, q2_2, q3_2, ∇U_quat, h)
+
+    F_1 = h*(F1_1 + F2_1) / 2 + h*dr_1
+    T_1 = h*(T1_1 + T2_1) / 2 + h*G(q2_1)'dq_1
+    F_2 = p1_lin + p2_lin + h*(F1_2 + F2_2) / 2 + h*dr_2 
+    T_2 = p1_ang + p2_ang + h*(T1_2 + T2_2) / 2 + h*G(q2_2)'dq_2
+    return F_1, T_1, F_2, T_2
+end
+
+
+function DEL_body!(model::RobotArm, y, x1, x2, x3, λ, u1, u2, h; yi=1)
+    @assert length(u1) == length(u2) == model.numlinks 
+    edim = 6 * model.numlinks
+    yview = view(y, (1:edim) .+ (yi-1))
+    yview .= 0
+    g = model.gravity
+
+    # p = 5
+    # ξ = yview
+    for j = 1:model.numlinks
+        joint = model.joints[j]
+        body = model.links[j]
+        m, J = body.mass, body.J
+
+        # Inputs
+        # x1_1, x2_1                    # previous link
+        # x1_2, x2_2, x3_2, u1, u2, λ   # current link
+
+        # Outputs
+        # F_1, T_1  # DEL at previous link
+        # F_2, T_2  # DEL at current link
+
+
+        iF_1 = (1:3) .+ (j-2)*6  .+ (yi-1)
+        iT_1 = (4:6) .+ (j-2)*6  .+ (yi-1)
+        iF_2 = (1:3) .+ (j-1)*6  .+ (yi-1)
+        iT_2 = (4:6) .+ (j-1)*6  .+ (yi-1)
+
+        x1_1 = getstate(model, x1, j-1)
+        x2_1 = getstate(model, x2, j-1)
+
+        x1_2 = getstate(model, x1, j)
+        x2_2 = getstate(model, x2, j)
+        x3_2 = getstate(model, x3, j)
+
+        p = numconstraints(joint)
+        ci = (1:p) .+ (j-1)*p
+        λj = view(λ, ci)
+        ∇U_tran = m*g*SA[0,0,1]
+        ∇U_quat = m*g*SA[0,0,1]
+        isroot = j == 1
+
+        F_1, T_1, F_2, T_2 = DEL_body!(
+            body, joint, ∇U_tran, ∇U_quat, x1_1, x2_1, x1_2, x2_2, x3_2, λj, u1[j], u2[j], h, isroot
+        )
+
+        if !isroot
+            y[iF_1] .+= F_1
+            y[iT_1] .+= T_1
+        end
+        y[iF_2] .+= F_2
+        y[iT_2] .+= T_2
+
+    end
+    return y
+
+end
+
 function ∇DEL!(model::RobotArm, jac, x1, x2, x3, λ, u1, u2, h; 
     ix1 = 1:14, ix2 = ix1 .+ 16, ix3 = ix2 .+ 16, iu1=15:16, iu2=iu1 .+ 16, yi=1, λi=iu2[end]+1
 )
@@ -454,9 +570,9 @@ function simulate(model::RobotArm, params::SimParams, U, x0; newton_iters=20, to
     M = model.numlinks 
     p = numconstraints(model)
     edim = 6M + p
-    Δx = zero(x0)
+    Δx = zeros(length(x0))
 
-    X = [zero(x0) for k = 1:params.N]
+    X = [zeros(length(x0)) for k = 1:params.N]
     λ = [zeros(p) for i = 1:params.N]
 
     xi = SVector{6M}(1:6M)

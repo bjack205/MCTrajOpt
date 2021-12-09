@@ -9,7 +9,6 @@ using BenchmarkTools
 using FiniteDiff
 using SparseArrays
 using Plots
-include("visualization.jl")
 
 using MathOptInterface
 const MOI = MathOptInterface 

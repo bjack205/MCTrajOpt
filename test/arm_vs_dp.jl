@@ -7,7 +7,6 @@ using Test
 using Random
 using BenchmarkTools
 using FiniteDiff
-include("visualization.jl")
 
 using MathOptInterface
 const MOI = MathOptInterface 
@@ -19,11 +18,11 @@ body2 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
 pen = DoublePendulum(body1, body2, gravity=true)
 
 ## Build the Robot Arm
-arm = MC.RobotArm([body1, body2], [pen.joint0, pen.joint1], gravity=true)
+geom = [MC.CylindricalBody(0.10, 0.25, :aluminum) for j = 1:2]
+arm = MC.RobotArm(geom, [pen.joint0, pen.joint1], links=[body1, body2], gravity=true)
 
 θ = randn(2)
-r,q = MC.min2max(arm, θ)
-@test MC.min2max(pen, θ) ≈ [r[2]; q[2]; r[3]; q[3]]
+@test MC.min2max(arm, θ) ≈ MC.min2max(pen, θ)
 
 x = MC.randstate(pen)
 v = @SVector randn(12)
@@ -75,6 +74,10 @@ u2 = @SVector randn(2)
 @test MC.DEL!(pen, ypen, x1, x2, x3, λ, u1, u2, h) ≈ 
     MC.DEL!(arm, yarm, x1, x2, x3, λ, u1, u2, h)
 
+@test MC.DEL!(pen, ypen, x1, x2, x3, λ, u1, u2, h) ≈ 
+    MC.DEL_body!(arm, yarm, x1, x2, x3, λ, u1, u2, h)
+
+
 Jpen = zeros(12, 14*3 + 2 * 3 + 10)
 Jarm = zeros(12, 14*3 + 2 * 3 + 10)
 @test MC.∇DEL!(pen, Jpen, x1, x2, x3, λ, u1, u2, h) ≈ 
@@ -83,7 +86,7 @@ Jarm = zeros(12, 14*3 + 2 * 3 + 10)
 
 ## MOI
 pen = DoublePendulum(body1, body2, gravity=false)
-arm = MC.RobotArm([body1, body2], [pen.joint0, pen.joint1], gravity=false)
+arm = MC.RobotArm(geom, [pen.joint0, pen.joint1], links=[body1, body2], gravity=false)
 
 # Generate target trajectory
 opt = SimParams(1.0, 0.05)
@@ -92,7 +95,7 @@ control(t) = SA[0.5 * (t > 0.5), cos(pi*t)*2]
 U = control.(opt.thist)
 x0 = MC.min2max(pen, [0.0,0])
 Xref = MC.simulate(pen, opt, U, x0)
-@test MC.simulate(arm, opt, U, x0) ≈ Xref
+@test MC.simulate(arm, opt, U, x0)[1] ≈ Xref
 
 # Goal position
 xgoal = MC.min2max(pen, [-deg2rad(20), deg2rad(40)])

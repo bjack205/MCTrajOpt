@@ -140,7 +140,7 @@ function MOI.eval_constraint(prob::ArmMOI, c, z)
 
         # Compute the Discrete Euler-Lagrange constraint
         λ = z[λinds[i]]
-        DEL!(prob.model, c, x1, x2, x3, λ, u1, u2, h, yi=ci[1])
+        DEL_body!(prob.model, c, x1, x2, x3, λ, u1, u2, h, yi=ci[1])
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L

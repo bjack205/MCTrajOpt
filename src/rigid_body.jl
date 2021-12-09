@@ -185,6 +185,12 @@ function D3_DEL(body, x1,x2,x3, F1,F2, h)
     ForwardDiff.jacobian(x->DEL(body,x1,x2,x,F1,F2,h), x3) * errstate_jacobian(body, x3)
 end
 
+D1Ld_tran(body::RigidBody, r1, r2, ∇U, h) = -body.mass/h * (r2 - r1) - h*∇U/2
+D1Ld_quat(body::RigidBody, q1, q2, ∇U, h) = 4/h * G(q1)'Tmat*R(q2)'Hmat * body.J * Hmat'L(q1)'q2
+
+D2Ld_tran(body::RigidBody, r1, r2, ∇U, h) = +body.mass/h * (r2 - r1) - h*∇U/2
+D2Ld_quat(body::RigidBody, q1, q2, ∇U, h) = 4/h * G(q2)'L(q1)*Hmat * body.J * Hmat'L(q1)'q2
+
 
 #############################################
 # Simulation
