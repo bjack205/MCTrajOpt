@@ -97,43 +97,6 @@ function wrench(joint::RevoluteJoint, x1, x2, u::Real)
     return ξ1, ξ2
 end
 
-abstract type TwoBody end
-struct SpaceBar <: TwoBody 
-    b1::RigidBody
-    b2::RigidBody
-    joint::RevoluteJoint
-end
-state_dim(::TwoBody) = 14
-
-function randstate(model::TwoBody)
-    r_1 = @SVector randn(3)
-    r_2 = @SVector randn(3)
-    q_1 = normalize(@SVector randn(4))
-    q_2 = normalize(@SVector randn(4))
-    return [r_1; q_1; r_2; q_2]
-end
-
-function MCTrajOpt.mass_matrix(body::TwoBody)
-    M1 = mass_matrix(body.b1)
-    M2 = mass_matrix(body.b2)
-    blockdiag(M1,M2)
-end
-
-function splitstate(model::TwoBody, x)
-    inds = SVector{7}(1:7)
-    x[inds], x[inds .+ 7]
-end
-
-getrind(body::TwoBody, j) = SA[1,2,3] .+ (j-1)*7
-getqind(body::TwoBody, j) = SA[4,5,6,7] .+ (j-1)*7
-
-gettran(body::TwoBody, x) = x[SA[1,2,3]], x[SA[8,9,10]]
-gettran(body::TwoBody, x, j) = j == 0 ? basetran(body) : x[SA[1,2,3] .+ (j-1)*7]
-getquat(body::TwoBody, x) = x[SA[4,5,6,7]], x[SA[11,12,13,14]]
-getquat(body::TwoBody, x, j) = j == 0 ? basequat(body) : x[SA[4,5,6,7] .+ (j-1)*7]
-getlinvel(body::TwoBody, v, j) = v[SA[1,2,3] .+ (j-1)*6]
-getangvel(body::TwoBody, v, j) = v[SA[4,5,6] .+ (j-1)*6]
-
 force1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = SA_F64[0,0,0]
 force2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = SA_F64[0,0,0]
 
@@ -170,6 +133,44 @@ wrench1(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) =
     force1(joint, r_1, q_2, r_2, q_2, u), torque1(joint, r_1, q_1, r_2, q_2, u)
 wrench2(joint::RevoluteJoint, r_1, q_1, r_2, q_2, u::Real) = 
     force2(joint, r_1, q_2, r_2, q_2, u), torque2(joint, r_1, q_1, r_2, q_2, u)
+
+
+abstract type TwoBody end
+struct SpaceBar <: TwoBody 
+    b1::RigidBody
+    b2::RigidBody
+    joint::RevoluteJoint
+end
+state_dim(::TwoBody) = 14
+
+function randstate(model::TwoBody)
+    r_1 = @SVector randn(3)
+    r_2 = @SVector randn(3)
+    q_1 = normalize(@SVector randn(4))
+    q_2 = normalize(@SVector randn(4))
+    return [r_1; q_1; r_2; q_2]
+end
+
+function MCTrajOpt.mass_matrix(body::TwoBody)
+    M1 = mass_matrix(body.b1)
+    M2 = mass_matrix(body.b2)
+    blockdiag(M1,M2)
+end
+
+function splitstate(model::TwoBody, x)
+    inds = SVector{7}(1:7)
+    x[inds], x[inds .+ 7]
+end
+
+getrind(body::TwoBody, j) = SA[1,2,3] .+ (j-1)*7
+getqind(body::TwoBody, j) = SA[4,5,6,7] .+ (j-1)*7
+
+gettran(body::TwoBody, x) = x[SA[1,2,3]], x[SA[8,9,10]]
+gettran(body::TwoBody, x, j) = j == 0 ? basetran(body) : x[SA[1,2,3] .+ (j-1)*7]
+getquat(body::TwoBody, x) = x[SA[4,5,6,7]], x[SA[11,12,13,14]]
+getquat(body::TwoBody, x, j) = j == 0 ? basequat(body) : x[SA[4,5,6,7] .+ (j-1)*7]
+getlinvel(body::TwoBody, v, j) = v[SA[1,2,3] .+ (j-1)*6]
+getangvel(body::TwoBody, v, j) = v[SA[4,5,6] .+ (j-1)*6]
 
 function splitvel(model::TwoBody, ν)
     inds = SVector{6}(1:6)

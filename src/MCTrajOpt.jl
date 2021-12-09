@@ -27,6 +27,8 @@ include("twobody_ipopt.jl")
 include("double_pendulum.jl")
 include("dp_ipopt.jl")
 
+include("arm.jl")
+
 include("visualization/bodies.jl")
 
 end # module
