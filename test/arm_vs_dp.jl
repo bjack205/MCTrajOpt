@@ -92,6 +92,7 @@ control(t) = SA[0.5 * (t > 0.5), cos(pi*t)*2]
 U = control.(opt.thist)
 x0 = MC.min2max(pen, [0.0,0])
 Xref = MC.simulate(pen, opt, U, x0)
+@test MC.simulate(arm, opt, U, x0) ≈ Xref
 
 # Goal position
 xgoal = MC.min2max(pen, [-deg2rad(20), deg2rad(40)])

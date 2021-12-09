@@ -15,6 +15,7 @@ struct RobotArm
     end
 end
 
+numconstraints(arm::RobotArm) = sum(numconstraints.(arm.joints))
 
 # State extraction
 basetran(model::RobotArm) = SA[0,0,0.]
@@ -28,6 +29,33 @@ getquat(body::RobotArm, x, j, k=1) = j == 0 ? basequat(body) : x[SVector{4}(getq
 
 getlinvel(body::RobotArm, v, j, k=1) = v[SA[1,2,3] .+ (j-1)*6*body.slink .+ (k-1)*6*body.stime]
 getangvel(body::RobotArm, v, j, k=1) = v[SA[4,5,6] .+ (j-1)*6*body.slink .+ (k-1)*6*body.stime]
+
+function compose_states!(model::RobotArm, x3, x1, x2)
+    for j = 1:model.numlinks
+        ri = getrind(model, j)
+        qi = getqind(model, j)
+        r1 = gettran(model, x1, j)
+        r2 = gettran(model, x2, j)
+        q1 = getquat(model, x1, j)
+        q2 = getquat(model, x2, j)
+
+        x3[ri] = r1 + r2
+        x3[qi] = L(q1)*q2
+    end
+    return x3
+end
+
+function err2fullstate!(model::RobotArm, x, e)
+    for j = 1:model.numlinks
+        ri = getrind(model, j)
+        qi = getqind(model, j)
+        dr = getlinvel(model, e, j)
+        dϕ = getangvel(model, e, j)
+        x[ri] = dr 
+        x[qi] = cayleymap(dϕ)
+    end
+    return x
+end
 
 function min2max(model::RobotArm, θ)
     r_0 = basetran(model)
@@ -378,4 +406,84 @@ function ∇DEL!(model::RobotArm, jac, x1, x2, x3, λ, u1, u2, h;
         xi=yi, yi=λi, s=h, errstate=Val(true), transpose=Val(true))
 
     return jac
+end
+
+function ∇DEL3!(model::RobotArm, jac, x1, x2, x3, λ, F1, F2, h; yi=1)
+    # Discrete Legendre Transforms
+    ir = (1:3) .+ (yi-1)
+    iq = (4:6) .+ (yi-1)
+    M = model.numlinks  # number of links
+    g = model.gravity
+    for j = 1:model.numlinks
+        body = model.links[j]
+        m, J = body.mass, body.J
+        q1, q2, q3,   = getquat(model, x1, j), getquat(model, x2, j), getquat(model, x3, j)
+        ir3 = getrind(model, j)
+        iq3 = getqind(model, j)
+        
+        # D1Ld
+        @view(jac[ir, ir]) .+= -m/h * I3
+        @view(jac[iq, iq]) .+= 4/h * G(q2)'Tmat*R(q3)'Hmat * J * Hmat'L(q2)'G(q3) + 
+            4/h * G(q2)'Tmat*L(Hmat * J * Hmat'L(q2)'q3) * Tmat*G(q3)
+
+        ir = ir .+ 6
+        iq = iq .+ 6
+    end
+
+    # Derivative wrt multiplier
+    ∇joint_constraints!(model, jac, x2, 
+        xi=yi, yi=6*M+1, s=h, errstate=Val(true), transpose=Val(true))
+
+    # Joint constraints at next time step
+    ∇joint_constraints!(model, jac, x3,
+        xi=yi+6*M, yi=1, errstate=Val(true))
+    return jac
+end
+
+function simulate(model::RobotArm, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
+    X = [MVector(zero(x0)) for k = 1:params.N]
+    X[1] = x0
+    X[2] = x0
+    M = model.numlinks 
+    p = numconstraints(model)
+    edim = 6M + p
+    Δx = zero(X[1])
+
+    xi = SVector{6M}(1:6M)
+    yi = SVector{10}(6M .+ (1:p))
+    e = zeros(edim)
+    econ = view(e, 6M .+ (1:p))
+    H = zeros(edim, edim)
+
+    for k = 2:params.N-1
+        h = params.h
+
+        # Initial guess
+        X[k+1] .= X[k]
+        λ = @SVector zeros(10)
+
+        for i = 1:newton_iters
+            u1 = U[k-1]
+            u2 = U[k]
+
+            DEL!(model, e, X[k-1], X[k], X[k+1], λ, u1,u2, h)
+            joint_constraints!(model, econ, X[k+1])
+            if norm(e, Inf) < tol
+                break
+            end
+            H .= 0
+            ∇DEL3!(model, H, X[k-1], X[k], X[k+1], λ, u1, u2, h)
+            Δ = -(H\e)
+            err2fullstate!(model, Δx, Δ[xi])
+            compose_states!(model, X[k+1], X[k+1], Δx)
+            λ += Δ[yi]
+
+            if i == newton_iters
+                @warn "Newton failed to converge within $i iterations at timestep $k"
+            end
+        end
+
+    end
+    return X
+
 end
