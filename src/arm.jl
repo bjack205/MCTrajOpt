@@ -435,7 +435,7 @@ function DEL_body!(model::RobotArm, y, x1, x2, x3, λ, u1, u2, h; yi=1)
         isroot = j == 1
 
         F_1, T_1, F_2, T_2 = DEL_body!(
-            body, joint, ∇U_tran, ∇U_quat, x1_1, x2_1, x1_2, x2_2, x3_2, λj, u1[j], u2[j], h, isroot
+            body, joint, ∇U_tran, ∇U_quat, x1_1, x2_1, x1_2, x2_2, x3_2, λj, u1[j], u2[j], h
         )
 
         if !isroot

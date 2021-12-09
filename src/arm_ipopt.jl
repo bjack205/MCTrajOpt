@@ -20,6 +20,7 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     ncons::Dict{Symbol,Int}
     rinds::Matrix{SVector{3,Int}}   # N × L matrix of position indices
     qinds::Matrix{SVector{4,Int}}
+
     xinds::Vector{UnitRange{Int}}
     uinds::Vector{SVector{Nu,Int}}
     λinds::Vector{SVector{Nc,Int}}
@@ -76,6 +77,15 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     end
 end
 
+function getstate(prob::ArmMOI, z, k, j)
+    if j == 0
+        return [basetran(prob.model); basequat(prob.model)]
+    else
+        xi = [prob.rinds[k,j]; prob.qinds[k,j]]
+        return z[xi]
+    end
+end
+
 function initialize_sparsity!(prob::ArmMOI)
     blocks = prob.blocks
 
@@ -126,21 +136,57 @@ function MOI.eval_constraint(prob::ArmMOI, c, z)
     rinds, qinds = prob.rinds, prob.qinds
     uinds, λinds = prob.uinds, prob.λinds
     xinds = prob.xinds
+    model = prob.model
 
     off = 0
+    c .= 0
 
     # Discrete Euler-Lagrange (dynamics) constraints
     ci = 1:6*prob.L
     for (i,k) in enumerate(2:prob.N-1)
-        x1 = view(z, xinds[k-1])
         u1 = z[uinds[k-1]]
-        x2 = view(z, xinds[k])
         u2 = z[uinds[k]]
-        x3 = view(z, xinds[k+1])
-
-        # Compute the Discrete Euler-Lagrange constraint
         λ = z[λinds[i]]
-        DEL_body!(prob.model, c, x1, x2, x3, λ, u1, u2, h, yi=ci[1])
+
+        yi = ci[1]
+        g = model.gravity
+
+        for j = 1:model.numlinks
+            joint = model.joints[j]
+            body = model.links[j]
+            m, J = body.mass, body.J
+
+            iF_1 = (1:3) .+ (j-2)*6  .+ (yi-1)
+            iT_1 = (4:6) .+ (j-2)*6  .+ (yi-1)
+            iF_2 = (1:3) .+ (j-1)*6  .+ (yi-1)
+            iT_2 = (4:6) .+ (j-1)*6  .+ (yi-1)
+
+            x1_1 = getstate(prob, z, k-1, j-1)
+            x2_1 = getstate(prob, z, k,   j-1)
+
+            x1_2 = getstate(prob, z, k-1, j)
+            x2_2 = getstate(prob, z, k,   j)
+            x3_2 = getstate(prob, z, k+1, j)
+
+            p = numconstraints(joint)
+            ci2 = (1:p) .+ (j-1)*p
+            λj = view(λ, ci2)
+            ∇U_tran = m*g*SA[0,0,1]
+            ∇U_quat = m*g*SA[0,0,1]
+
+            F_1, T_1, F_2, T_2 = DEL_body!(
+                body, joint, ∇U_tran, ∇U_quat, x1_1, x2_1, x1_2, x2_2, x3_2, λj, u1[j], u2[j], h
+            )
+
+            isroot = j == 1
+            if !isroot
+                c[iF_1] .+= F_1
+                c[iT_1] .+= T_1
+            end
+            c[iF_2] .+= F_2
+            c[iT_2] .+= T_2
+
+        end
         
         ci = ci .+ 6*prob.L
         off += 6*prob.L
