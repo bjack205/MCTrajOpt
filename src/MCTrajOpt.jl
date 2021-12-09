@@ -18,6 +18,7 @@ export TwoBody, RevoluteJoint, SpaceBar, DoublePendulum
 export packZ!, randstate
 
 include("sparse.jl")
+include("joints.jl")
 include("rotations.jl")
 include("rigid_body.jl")
 include("two_body.jl")
@@ -28,6 +29,7 @@ include("double_pendulum.jl")
 include("dp_ipopt.jl")
 
 include("arm.jl")
+include("arm_ipopt.jl")
 
 include("visualization/bodies.jl")
 
