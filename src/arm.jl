@@ -1,17 +1,19 @@
 struct RobotArm
+    geom::Vector{CylindricalBody}
     links::Vector{RigidBody} 
     joints::Vector{RevoluteJoint}
     gravity::Float64
     numlinks::Int
     slink::Int  # spacing between links
     stime::Int  # spacing between time steps
-    function RobotArm(links::Vector{RigidBody}, joints::Vector{RevoluteJoint}; gravity::Bool=false)
-        @assert length(links) == length(joints)
+    function RobotArm(geom::Vector{CylindricalBody}, joints::Vector{RevoluteJoint}; gravity::Bool=false)
+        @assert length(geom) == length(joints)
+        links = RigidBody.(geom)
         numlinks = length(links)
         g = gravity ? 9.81 : 0.0
         slink = 1
         stime = numlinks
-        new(links, joints, g, numlinks, slink, stime)
+        new(geom, links, joints, g, numlinks, slink, stime)
     end
 end
 
@@ -60,12 +62,19 @@ end
 function min2max(model::RobotArm, θ)
     r_0 = basetran(model)
     q_0 = basequat(model)
+    r_prev = r_0
+    q_prev = q_0
     r = [copy(r_0) for j = 1:model.numlinks+1]  # includes base link
     q = [copy(q_0) for j = 1:model.numlinks+1]  # includes base link
+    x = zeros(model.numlinks * 7)
     for j = 1:model.numlinks
-        r[j+1], q[j+1] = joint_kinematics(model.joints[j], r[j], q[j], θ[j])
+        r, q = joint_kinematics(model.joints[j], r_prev, q_prev, θ[j])
+        x[getrind(model, j)] = r
+        x[getqind(model, j)] = q
+        r_prev, q_prev = r, q
     end
-    return r, q
+    # return r, q
+    return x
 end
 
 function kinetic_energy(model::RobotArm, x, v)
@@ -309,8 +318,9 @@ function ∇getwrenches!(model::RobotArm, jac, x, u; ix=1:14, iu=15:16, yi=1, s=
 end
 
 function DEL!(model::RobotArm, y, x1, x2, x3, λ, u1, u2, h; yi=1)
-    @assert length(u1) == length(u2) == 2
-    yview = view(y, (1:12) .+ (yi-1))
+    @assert length(u1) == length(u2) == model.numlinks 
+    edim = 6 * model.numlinks
+    yview = view(y, (1:edim) .+ (yi-1))
     yview .= 0
 
     getwrenches!(model, yview, x1, u1)
@@ -441,42 +451,45 @@ function ∇DEL3!(model::RobotArm, jac, x1, x2, x3, λ, F1, F2, h; yi=1)
 end
 
 function simulate(model::RobotArm, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
-    X = [MVector(zero(x0)) for k = 1:params.N]
-    X[1] = x0
-    X[2] = x0
     M = model.numlinks 
     p = numconstraints(model)
     edim = 6M + p
-    Δx = zero(X[1])
+    Δx = zero(x0)
+
+    X = [zero(x0) for k = 1:params.N]
+    λ = [zeros(p) for i = 1:params.N]
 
     xi = SVector{6M}(1:6M)
-    yi = SVector{10}(6M .+ (1:p))
+    yi = SVector{p}(6M .+ (1:p))
     e = zeros(edim)
     econ = view(e, 6M .+ (1:p))
     H = zeros(edim, edim)
+
+    # Set Initial conditions
+    X[1] = x0
+    X[2] = x0
 
     for k = 2:params.N-1
         h = params.h
 
         # Initial guess
         X[k+1] .= X[k]
-        λ = @SVector zeros(10)
 
         for i = 1:newton_iters
             u1 = U[k-1]
             u2 = U[k]
 
-            DEL!(model, e, X[k-1], X[k], X[k+1], λ, u1,u2, h)
+            DEL!(model, e, X[k-1], X[k], X[k+1], λ[k], u1,u2, h)
             joint_constraints!(model, econ, X[k+1])
             if norm(e, Inf) < tol
                 break
             end
             H .= 0
-            ∇DEL3!(model, H, X[k-1], X[k], X[k+1], λ, u1, u2, h)
+            ∇DEL3!(model, H, X[k-1], X[k], X[k+1], λ[k], u1, u2, h)
             Δ = -(H\e)
             err2fullstate!(model, Δx, Δ[xi])
             compose_states!(model, X[k+1], X[k+1], Δx)
-            λ += Δ[yi]
+            λ[k] += Δ[yi]
 
             if i == newton_iters
                 @warn "Newton failed to converge within $i iterations at timestep $k"
@@ -484,6 +497,6 @@ function simulate(model::RobotArm, params::SimParams, U, x0; newton_iters=20, to
         end
 
     end
-    return X
+    return X, λ
 
 end

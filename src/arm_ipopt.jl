@@ -10,7 +10,7 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     rgoal::SVector{3,Float64}       # End-effector goal
     p_ee::SVector{3,Float64}        # Location of end-effector in body 2 frame
     goalcon::Bool                   # Use end-effector goal constraint
-    Xref::Vector{SVector{14,Float64}}
+    Xref::Vector{Vector{Float64}}
 
     n_nlp::Int
     m_nlp::Int
@@ -21,7 +21,7 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     rinds::Matrix{SVector{3,Int}}   # N × L matrix of position indices
     qinds::Matrix{SVector{4,Int}}
     xinds::Vector{UnitRange{Int}}
-    uinds::Vector{SVector{2,Int}}
+    uinds::Vector{SVector{Nu,Int}}
     λinds::Vector{SVector{Nc,Int}}
     blocks::BlockViews
     function ArmMOI(model::RobotArm, params::SimParams, Qr, Qq, R, x0, Xref; 
@@ -101,8 +101,10 @@ function MOI.eval_objective(prob::ArmMOI, z)
             rref = gettran(model, xref, j)
             qref = getquat(model, xref, j)
             dr = r - rref
-            dq = q - qref
-            J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
+            # dq = q - qref
+            # J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
+            dq = q'qref
+            J += 0.5 * (dr'prob.Qr*dr + min(1+dq, 1-dq) * 1)
         end
         if k < prob.N
             u = z[uinds[k]]
@@ -167,8 +169,8 @@ function MOI.eval_constraint(prob::ArmMOI, c, z)
 
     if prob.goalcon
         ci = off .+ (1:3)
-        rf = z[rinds[prob.N,2]]
-        qf = z[qinds[prob.N,2]]
+        rf = z[rinds[prob.N,end]]
+        qf = z[qinds[prob.N,end]]
         c[ci] = rf + Amat(qf)*prob.p_ee - prob.rgoal
     end
     return
@@ -226,10 +228,10 @@ function MOI.eval_constraint_jacobian(prob::ArmMOI, jac, z)
 
     if prob.goalcon
         ci = off .+ (1:3)
-        rf = z[rinds[prob.N,2]]
-        qf = z[qinds[prob.N,2]]
-        J0[ci, rinds[prob.N,2]] = I3 
-        J0[ci, qinds[prob.N,2]] = ∇rot(qf, prob.p_ee) 
+        rf = z[rinds[prob.N,end]]
+        qf = z[qinds[prob.N,end]]
+        J0[ci, rinds[prob.N,end]] = I3 
+        J0[ci, qinds[prob.N,end]] = ∇rot(qf, prob.p_ee) 
     end
     return 
 end
@@ -301,3 +303,17 @@ function randtraj(prob::ArmMOI{Nu,Nc}) where {Nu,Nc}
     return z0
 end
 
+function buildtraj(prob::ArmMOI, X, U, λ)
+    z0 = zeros(prob.n_nlp)
+    for k = 1:prob.N
+        for j = 1:prob.L
+            z0[prob.rinds[k,j]] = gettran(prob.model, X[k], j)
+            z0[prob.qinds[k,j]] = getquat(prob.model, X[k], j)
+        end
+        if k < prob.N
+            z0[prob.uinds[k]] = U[k] 
+            z0[prob.λinds[k]] = λ[k] 
+        end
+    end
+    return z0
+end

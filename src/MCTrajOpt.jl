@@ -12,10 +12,13 @@ export mass_matrix,
     #    Lagrangian_dot, D1L_dot, D2L_dot,
        Ld, D1Ld, D2Ld,
        DEL, D3_DEL,
-       simulate
+       simulate,
+       DENSITIES
 
 export TwoBody, RevoluteJoint, SpaceBar, DoublePendulum
-export packZ!, randstate
+export packZ!, randstate, visualize!, launchvis
+
+
 
 include("sparse.jl")
 include("joints.jl")
@@ -28,10 +31,12 @@ include("twobody_ipopt.jl")
 include("double_pendulum.jl")
 include("dp_ipopt.jl")
 
+include("visualization/bodies.jl")
+
 include("arm.jl")
 include("arm_ipopt.jl")
 
-include("visualization/bodies.jl")
+include("visualization/visualization.jl")
 
 end # module
 
