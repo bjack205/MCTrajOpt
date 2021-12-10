@@ -24,6 +24,7 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     xinds::Vector{UnitRange{Int}}
     uinds::Vector{SVector{Nu,Int}}
     λinds::Vector{SVector{Nc,Int}}
+    cinds::Dict{Symbol,Matrix{UnitRange{Int}}}
     blocks::BlockViews
     function ArmMOI(model::RobotArm, params::SimParams, Qr, Qq, R, x0, Xref; 
         rf = nothing, p_ee = SA[0,0,0.5]
@@ -64,12 +65,21 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
         m_nlp = p_del + p_joints + p_quatnorm + p_goal
         ncons = Dict(:DEL=>p_del, :joints=>p_joints, :quatnorm=>p_quatnorm)
 
+        # Constraints indices
+        # DEL constraints
+        geninds(n,m,p,off) = [(1:n) .+ (i-1)*n .+ (j-2)*n*m .+ off for i = 1:m, j= 1:p]
+        cinds = Dict{Symbol,Matrix{UnitRange{Int}}}()
+        cinds[:DEL] = geninds(6, N-1, L, 0)
+        cinds[:joints] = geninds(p, N-1, 1, p_del)
+        cinds[:quatnorm] = geninds(1, N-1, L, p_del + p_joints)
+        cinds[:goal] = geninds(3,1,1, p_del + p_joints + p_quatnorm)
+
         # Sparsity blocks
         blocks = BlockViews(m_nlp, n_nlp)
 
         # Create type and initialize the sparsity pattern
         prob = new{m,p}(model, params, Qr, Qq, R, r0, q0, rf, p_ee, goalcon, Xref,
-            n_nlp, m_nlp, N, L, p, ncons, rinds, qinds, xinds, uinds, λinds, blocks
+            n_nlp, m_nlp, N, L, p, ncons, rinds, qinds, xinds, uinds,  λinds, cinds, blocks
         )
         initialize_sparsity!(prob)
         prob
@@ -160,6 +170,7 @@ function MOI.eval_constraint(prob::ArmMOI, c, z)
             iT_1 = (4:6) .+ (j-2)*6  .+ (yi-1)
             iF_2 = (1:3) .+ (j-1)*6  .+ (yi-1)
             iT_2 = (4:6) .+ (j-1)*6  .+ (yi-1)
+            iF_2 = prob.cinds[:DEL][k,j]
 
             x1_1 = getstate(prob, z, k-1, j-1)
             x2_1 = getstate(prob, z, k,   j-1)

@@ -77,7 +77,6 @@ u2 = @SVector randn(2)
 @test MC.DEL!(pen, ypen, x1, x2, x3, λ, u1, u2, h) ≈ 
     MC.DEL_body!(arm, yarm, x1, x2, x3, λ, u1, u2, h)
 
-
 Jpen = zeros(12, 14*3 + 2 * 3 + 10)
 Jarm = zeros(12, 14*3 + 2 * 3 + 10)
 @test MC.∇DEL!(pen, Jpen, x1, x2, x3, λ, u1, u2, h) ≈ 
