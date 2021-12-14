@@ -1,5 +1,7 @@
 import Pkg; Pkg.activate(joinpath(@__DIR__, ".."))
 using MCTrajOpt
+g = rand(3)
+MCTrajOpt.cayleymap(g) ≈ 1/sqrt(1 + g'g / 4) * [1; g/2]
 using ForwardDiff
 using StaticArrays
 using LinearAlgebra
