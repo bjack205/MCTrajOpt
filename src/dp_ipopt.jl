@@ -3,6 +3,8 @@ const MOI = MathOptInterface
 
 struct DoublePendulumMOI{Nx,Nu,p} <: MOI.AbstractNLPEvaluator
     model::DoublePendulum
+    state::RBD.StateCache{Float64, RBD.TypeSortedCollections.TypeSortedCollection{Tuple{Vector{RigidBodyDynamics.Joint{Float64, RigidBodyDynamics.Revolute{Float64}}}}, 1}}
+    results::RBD.DynamicsResultCache{Float64}
     params::SimParams
     Qr::Diagonal{Float64, SVector{3, Float64}}
     Qq::Diagonal{Float64, SVector{4, Float64}}
@@ -32,12 +34,16 @@ ismincoord(::DoublePendulumMOI{Nx}) where Nx = Nx == 4
 function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
     Qr, Qq, R, x0, Xref; rf = nothing, p_ee = SA[0,0,0.5], minimalcoords::Bool=false
 )
+    # Build RBD model
+    mech = builddoublependulum([model.b1, model.b2], [model.joint0, model.joint1], gravity=model.gravity)
+    state = RBD.StateCache(mech)
+    cache = RBD.DynamicsResultCache(mech)
+
     N = params.N
     L = 2
     n = minimalcoords ? 2 * L :  7 * L
     m = control_dim(model)      # controls
     p = minimalcoords ? 0 : 5L  # constraint forces
-    @show n
 
     ri = SA[1,2,3]
     qi = SA[4,5,6,7]
@@ -64,7 +70,7 @@ function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
     p_quatnorm = (N-1)*L
     p_goal = 3 * goalcon
     if minimalcoords
-        m_nlp = (N-1)*2*L
+        m_nlp = (N-1)*2*L + p_goal
     else
         m_nlp = p_del + p_joints + p_quatnorm + p_goal
     end
@@ -72,7 +78,8 @@ function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
 
     blocks = BlockViews(m_nlp, n_nlp)
 
-    prob = DoublePendulumMOI{n,m,p}(model, params, Qr, Qq, R, r0, q0, rf, p_ee, goalcon, Xref,
+    prob = DoublePendulumMOI{n,m,p}(model, state, cache, params, Qr, Qq, R, r0, q0, rf, 
+        p_ee, goalcon, Xref,
         n_nlp, m_nlp, N, L, p, ncons, rinds, qinds, xinds, uinds, λinds, blocks
     )
     initialize_sparsity!(prob)
@@ -102,25 +109,30 @@ function MOI.eval_objective(prob::DoublePendulumMOI, z)
     xinds, uinds = prob.xinds, prob.uinds
     for k = 1:prob.N
         if ismincoord(prob)
-            xk = min2max(model, z[xinds[k]])
-            xref = min2max(model, prob.Xref[k])
+            θk = z[xinds[k]]
+            θref = prob.Xref[k]
+            # xk = min2max(model, θk) 
+            # xref = min2max(model, θref) 
+            p_ee = getendeffectorposition(prob, θk[1:2])
+            e = p_ee - prob.rgoal
+            J += 0.5 * e'prob.Qr*e
+            # dθ = θk - θref
+            # J += 0.5 * dθ'prob.Qq*dθ
         else
+            xk = z[xinds[k]]
             xref = prob.Xref[k]
-        end
         for j = 1:prob.L
-            if ismincoord(prob)
-                r = xk[rinds[1,j]]
-                q = xk[qinds[1,j]]
-            else
-                r = z[rinds[k,j]]
-                q = z[qinds[k,j]]
-            end
-            # xref = prob.Xref[k]
-            rref = gettran(model, xref, j)
-            qref = getquat(model, xref, j)
-            dr = r - rref
-            dq = q - qref
-            J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
+            r = gettran(model, xk, j)
+            q = getquat(model, xk, j)
+            e = r + Amat(q)*prob.p_ee - prob.rgoal
+            J += 0.5 * e'prob.Qr*e
+            # rref = gettran(model, xref, j)
+            # qref = getquat(model, xref, j)
+            # dr = r - rref
+            # dq = q - qref
+            # c[ci] = rf + Amat(qf)*prob.p_ee - prob.rgoal
+            # J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
+        end
         end
         if k < prob.N
             u = z[uinds[k]]
@@ -132,8 +144,29 @@ end
 
 function MOI.eval_objective_gradient(prob::DoublePendulumMOI, grad_f, x)
     obj(x) = MOI.eval_objective(prob, x)
-    ForwardDiff.gradient!(grad_f, obj, x)  # TODO: use a cache
+    # ForwardDiff.gradient!(grad_f, obj, x)  # TODO: use a cache
+    FiniteDiff.finite_difference_gradient!(grad_f, obj, x)
     return
+end
+
+function getendeffectorposition(prob::DoublePendulumMOI, theta)
+    state = prob.state[eltype(theta)]
+    RBD.set_configuration!(state, theta)
+    elbow = RBD.findjoint(state.mechanism, "elbow") 
+    p_ee = RBD.transform(state, RBD.Point3D(RBD.frame_after(elbow), prob.p_ee), RBD.root_frame(state.mechanism))
+    return p_ee.v
+end
+
+function implicitmidpoint!(prob::DoublePendulumMOI, c, θ1, u1, θ2, h)
+    θmid = (θ1 + θ2) / 2
+    T = eltype(θ2)
+    results = prob.results[T]
+    state = prob.state[T]
+    τ = SA[zero(T); u1[1]]
+    # c_ = zeros(T, length(θ2))
+
+    RBD.dynamics!(c, results, state, θmid, τ)
+    c .= θ1 + h*c - θ2
 end
 
 function dircol_constraints(prob::DoublePendulumMOI, c, z)
@@ -141,14 +174,26 @@ function dircol_constraints(prob::DoublePendulumMOI, c, z)
     h = prob.params.h
     xinds, uinds = prob.xinds, prob.uinds
 
+    off = 0
     ci = 1:4
     for (i,k) in enumerate(1:prob.N-1)
         θ1 = z[xinds[k]]
         u1 = z[uinds[k]]
         θ2 = z[xinds[k+1]]
         c[ci] .= implicitmidpoint(model, θ1, u1, θ2, h)
+        # cview = view(c, ci)
+        # implicitmidpoint!(prob, cview, θ1, u1, θ2)
         ci = ci .+ 4
+        off += 4
     end
+
+    if prob.goalcon
+        ci = off .+ (1:3)
+        θf = z[xinds[end]][SA[1,2]]  # get angles
+        p_ee = getendeffectorposition(prob, θf)
+        c[ci] = p_ee - prob.rgoal 
+    end
+
 end
 
 function ∇dircol_constraints(prob::DoublePendulumMOI, jac, z)
@@ -158,17 +203,30 @@ function ∇dircol_constraints(prob::DoublePendulumMOI, jac, z)
     J0 = NonzerosVector(jac, prob.blocks)
     xinds, uinds = prob.xinds, prob.uinds
 
+    off = 0
     ci = 1:4
     for (i,k) in enumerate(1:prob.N-1)
         θ1 = z[xinds[k]]
         u1 = z[uinds[k]]
         θ2 = z[xinds[k+1]]
+
+        # cols = xinds[k][1] : xinds[k+1][end]
+        # f!(y,z) = implicitmidpoint!(prob, y, z[xinds[1]], z[uinds[1]], z[xinds[2]])
+        # Jview = view(J0, ci, cols) 
+        # ForwardDiff.jacobian!(Jview, f!, ctmp, [θ1; u1; θ2])
         f(z) = implicitmidpoint(model, z[xinds[1]], z[uinds[1]], z[xinds[2]], h)
         ∇f = ForwardDiff.jacobian(f, [θ1; u1; θ2])
         J0[ci, xinds[k]] .= ∇f[:,xinds[1]] 
         J0[ci, uinds[k]] .= ∇f[:,uinds[1]] 
         J0[ci, xinds[k+1]] .= ∇f[:,xinds[2]] 
         ci = ci .+ 4
+        off += 4
+    end
+
+    if prob.goalcon
+        ci = off .+ (1:3)
+        θf = z[xinds[end]][SA[1,2]]  # get angles
+        J0[ci, xinds[end][1:2]] = ForwardDiff.jacobian(x->getendeffectorposition(prob, x), θf)
     end
 end
 
@@ -312,12 +370,19 @@ function ipopt_solve(prob::DoublePendulumMOI, x0; tol=1e-6, c_tol=1e-6, max_iter
     
     x_l = fill(-Inf,n_nlp)
     x_u = fill(+Inf,n_nlp)
-    for k = 1:2
-        for j = 1:prob.L
-            x_l[prob.rinds[k,j]] = prob.r0[j]
-            x_u[prob.rinds[k,j]] = prob.r0[j]
-            x_l[prob.qinds[k,j]] = prob.q0[j]
-            x_u[prob.qinds[k,j]] = prob.q0[j]
+    if ismincoord(prob)
+        x_l[1:4] = [-pi,0,0,0]
+        x_u[1:4] = [-pi,0,0,0]
+        x_l[prob.xinds[end]] = zeros(4)
+        x_u[prob.xinds[end]] = zeros(4)
+    else
+        for k = 1:2
+            for j = 1:prob.L
+                x_l[prob.rinds[k,j]] = prob.r0[j]
+                x_u[prob.rinds[k,j]] = prob.r0[j]
+                x_l[prob.qinds[k,j]] = prob.q0[j]
+                x_u[prob.qinds[k,j]] = prob.q0[j]
+            end
         end
     end
     # x_l[1:3] = prob.r0[1]
@@ -380,4 +445,35 @@ function randtraj(prob::DoublePendulumMOI)
         end
     end
     return z0
+end
+
+function simulate_mincoord(prob::DoublePendulumMOI, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
+    h = params.h
+    X = [copy(x0) for k = 1:params.N]
+    X[1] = x0
+
+    r = zeros(4)
+    H = zeros(4,4)
+
+    for k = 1:params.N-1
+        X[k+1] = copy(X[k])
+
+        res!(y,x) = implicitmidpoint!(prob, y, X[k], U[k], x, h)
+        # println("Time step $k")
+        for i = 1:newton_iters
+            res!(r, X[k+1])
+            # println("  res = $(norm(r,Inf))")
+            if norm(r,Inf) < tol
+                break
+            end
+            ForwardDiff.jacobian!(H, res!, r, X[k+1])
+            # H = ForwardDiff.jacobian(res, X[k+1])
+            X[k+1] += -(H\r)
+
+            if i == newton_iters
+                @warn "Hit max Newton iterations at time step $k"
+            end
+        end
+    end
+    return X
 end

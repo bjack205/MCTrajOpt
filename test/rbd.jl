@@ -27,11 +27,32 @@ joints = [model.joint0, model.joint1]
 
 ##
 dp = MC.builddoublependulum(bodies, joints, gravity=model.gravity)
-
-##
 state = RBD.MechanismState(dp)
+rescache = RBD.DynamicsResultCache(dp)
+statecache = RBD.StateCache(dp)
+
 RBD.set_configuration!(state, deg2rad.([0,90]))
 RBD.set_velocity!(state, [0,0])
+
+results = RBD.DynamicsResult(dp)
+
+
+function testdiff(dp, rescache, statecache)
+    xdot = zeros(4)
+    x = randn(4)
+    u = randn(2)
+    jac = zeros(4,4)
+    function f!(y,x)
+        RBD.dynamics!(y, rescache[eltype(x)], statecache[eltype(x)], x, u)
+    end
+    config = ForwardDiff.JacobianConfig(nothing, xdot, x)
+    @btime ForwardDiff.jacobian!($jac, $f!, $xdot, $x, $config)
+    # @btime RBD.dynamics!($rescache[Float64], $statecache[Float64], $u)
+    # @btime $f!($xdot,$x)
+end
+testdiff(dp, rescache, statecache)
+
+typeof(results)
 
 # Test kinematics
 function getlinkcom(state,j)

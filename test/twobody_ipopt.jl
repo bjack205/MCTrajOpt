@@ -39,7 +39,7 @@ visualize!(vis, twobody, X, sim)
 
 # Test minimal to maximal coordinate kinematicx
 r0 = SA[0,0,0] 
-q0 = MCTrajOpt.expm(SA[0,0,0]*deg2rad(45))
+q0 = MCTrajOpt.expm2(SA[0,0,0]*deg2rad(45))
 visualize!(vis, twobody, min2max(twobody, [r0; q0; deg2rad(30)]))
 
 ## TrajOpt

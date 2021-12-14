@@ -21,11 +21,11 @@ basequat(model::DoublePendulum) = SA[1,0,0,0.]
 function dynamics(model::DoublePendulum, θ, u)
     m1,J1 = model.b1.mass, model.b1.J[3,3]
     m2,J2 = model.b2.mass, model.b2.J[3,3]
-    r0,q0 = basetran(model), basequat(model)
     l1,l2 = 1.0, 1.0 
     g = model.gravity
 
     θ1,    θ2    = θ[1], θ[2]
+    θ1 += pi/2
     θ1dot, θ2dot = θ[3], θ[4]
     s1,c1 = sincos(θ1)
     s2,c2 = sincos(θ2)
@@ -44,7 +44,7 @@ function dynamics(model::DoublePendulum, θ, u)
     B = @SVector [b1, b2]
 
     # friction
-    c = 1.0
+    c = 0.0
     C = @SVector [c*θ1dot, c*θ2dot]
 
     # gravity term
@@ -67,9 +67,9 @@ function min2max(model::DoublePendulum, q)
     θ1 = q[1]
     θ2 = q[2]
     r_0 = model.joint0.p1
-    q_1 = expm(model.joint0.axis*θ1)
+    q_1 = expm2(model.joint0.axis*θ1)
     r_1 = r_0 - Amat(q_1)*model.joint0.p2
-    q12 = expm(model.joint1.axis*θ2)
+    q12 = expm2(model.joint1.axis*θ2)
     q_2 = L(q12)*q_1
     r_2 = r_1 + Amat(q_1)*model.joint1.p1 - Amat(q_2)*model.joint1.p2
     return [r_1; q_1; r_2; q_2]
@@ -842,4 +842,31 @@ function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=
     end
     return X, λhist
 
+end
+
+function simulate_mincoord(model::DoublePendulum, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
+    h = params.h
+    X = [copy(x0) for k = 1:params.N]
+    X[1] = x0
+
+    for k = 1:params.N-1
+        X[k+1] = copy(X[k])
+
+        res(x2) = implicitmidpoint(model, X[k], U[k], x2, h)
+        # println("Time step $k")
+        for i = 1:newton_iters
+            r = res(X[k+1]) 
+            # println("  res = $(norm(r,Inf))")
+            if norm(r,Inf) < tol
+                break
+            end
+            H = ForwardDiff.jacobian(res, X[k+1])
+            X[k+1] += -(H\r)
+
+            if i == newton_iters
+                @warn "Hit max Newton iterations at time step $k"
+            end
+        end
+    end
+    return X
 end

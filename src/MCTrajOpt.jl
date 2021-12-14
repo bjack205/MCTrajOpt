@@ -2,6 +2,7 @@ module MCTrajOpt
 
 using StaticArrays
 using ForwardDiff
+using FiniteDiff
 using LinearAlgebra
 
 export RigidBody, SimParams
@@ -29,11 +30,11 @@ include("rigid_body_ipopt.jl")
 include("point_mass_ipopt.jl")
 include("twobody_ipopt.jl")
 include("double_pendulum.jl")
+include("minimal_coordinates.jl")
 include("dp_ipopt.jl")
 
 include("visualization/bodies.jl")
 
-include("minimal_coordinates.jl")
 include("arm.jl")
 include("arm_ipopt.jl")
 

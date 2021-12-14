@@ -73,7 +73,7 @@ function ∇²joint_constraint!(joint::RevoluteJoint, jac, r_1, q_1, r_2, q_2, �
 end
 
 function joint_kinematics(joint::RevoluteJoint, r_1, q_1, θ)
-    q12 = expm(Amat(q_1)*joint.axis * θ)
+    q12 = expm2(Amat(q_1)*joint.axis * θ)
     q_2 = L(q12)*q_1
     r_2 = r_1 + Amat(q_1)*joint.p1 - Amat(q_2)*joint.p2
     return r_2, q_2

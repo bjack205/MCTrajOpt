@@ -179,7 +179,7 @@ function min2max(model::TwoBody, q)
     ϕ21 = model.joint.axis  # joint axis in body 1 frame 
     p1,p2 = model.joint.p1, model.joint.p2
 
-    q12 = expm(ϕ21*θ21)   # rotation of body 1 in body 2 frame 
+    q12 = expm2(ϕ21*θ21)   # rotation of body 1 in body 2 frame 
     q_2 = L(q12)*q_1
     r_2 = r_1 + Amat(q_1)*p1 - Amat(q_2)*p2
     return [r_1; q_1; r_2; q_2]

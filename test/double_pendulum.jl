@@ -89,7 +89,7 @@ c = MC.joint_constraints(model, x0)
 xviol = x0 + SA[0.0,0,0, 0,0,0,0, 0.1,0,0, 0,0,0,0]
 c = MC.joint_constraints(model, xviol)
 @test norm(c, Inf) ≈ 0.1
-xviol = SVector{14}([x0[1:10]; MC.expm(SA[1,0,0]*0.01)])
+xviol = SVector{14}([x0[1:10]; MC.expm2(SA[1,0,0]*0.01)])
 c = MC.joint_constraints(model, xviol)
 @test norm(c, Inf) ≈ 0.005 atol=1e-6
 c0 = zeros(10)

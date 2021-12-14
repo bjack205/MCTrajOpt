@@ -17,7 +17,7 @@ open(vis)
 ##
 r_0 = SA[1,0,0.]
 q_0 = SA[1,0,0,0.]
-q_0 = MC.expm([0,1,0]*deg2rad(00))
+q_0 = MC.expm2([0,1,0]*deg2rad(00))
 
 b1 = CylindricalBody(densities[:aluminum], 0.15, 0.5)
 joint0 = RevoluteJoint([0,0,0], [0,0,-b1.length/2], [0,0,1])

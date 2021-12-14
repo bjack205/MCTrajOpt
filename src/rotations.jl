@@ -249,12 +249,16 @@ function ∇²rot(q, r, b)
     2*R(rhat)'L(Hmat*b)
 end
 
-function expm(ϕ)
-    θ = norm(ϕ)
-    sθ,cθ = sincos(θ/2)
-    M = sinc(θ/π/2)/2
-    SA[cθ, ϕ[1]*M, ϕ[2]*M, ϕ[3]*M]
+function expm2(ϕ)
+    Rotations.params(Rotations.expm(ϕ))
 end
+
+# function expm(ϕ)
+#     θ = norm(ϕ)
+#     sθ,cθ = sincos(θ/2)
+#     M = sinc(θ/π/2)/2
+#     SA[cθ, ϕ[1]*M, ϕ[2]*M, ϕ[3]*M]
+# end
 
 function logm(q)
     w = q[1]
