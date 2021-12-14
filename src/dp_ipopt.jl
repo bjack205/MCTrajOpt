@@ -1,18 +1,18 @@
 using MathOptInterface
 const MOI = MathOptInterface
 
-struct DoublePendulumMOI{p} <: MOI.AbstractNLPEvaluator
+struct DoublePendulumMOI{Nx,Nu,p} <: MOI.AbstractNLPEvaluator
     model::DoublePendulum
     params::SimParams
     Qr::Diagonal{Float64, SVector{3, Float64}}
     Qq::Diagonal{Float64, SVector{4, Float64}}
-    R::Diagonal{Float64, SVector{2, Float64}}
+    R::Diagonal{Float64, SVector{Nu, Float64}}
     r0::Vector{SVector{3,Float64}}  # initial position
     q0::Vector{SVector{4,Float64}}  # initial orientation
     rgoal::SVector{3,Float64}       # End-effector goal
     p_ee::SVector{3,Float64}        # Location of end-effector in body 2 frame
     goalcon::Bool                   # Use end-effector goal constraint
-    Xref::Vector{SVector{14,Float64}}
+    Xref::Vector{SVector{Nx,Float64}}
 
     n_nlp::Int
     m_nlp::Int
@@ -22,20 +22,20 @@ struct DoublePendulumMOI{p} <: MOI.AbstractNLPEvaluator
     ncons::Dict{Symbol,Int}
     rinds::Matrix{SVector{3,Int}}   # N × L matrix of position indices
     qinds::Matrix{SVector{4,Int}}
-    xinds::Vector{SVector{14,Int}}
-    uinds::Vector{SVector{2,Int}}
+    xinds::Vector{SVector{Nx,Int}}
+    uinds::Vector{SVector{Nu,Int}}
     λinds::Vector{SVector{p,Int}}
     blocks::BlockViews
 end
 
 function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
-    Qr, Qq, R, x0, Xref; rf = nothing, p_ee = SA[0,0,0.5]
+    Qr, Qq, R, x0, Xref; rf = nothing, p_ee = SA[0,0,0.5], minimalcoords::Bool=false
 )
     N = params.N
     L = 2
-    n = 7 * L
-    m = 2  # controls
-    p = 10  # constraint forces
+    n = minimalcoords ? 2 * L :  7 * L
+    m = control_dim(model)      # controls
+    p = minimalcoords ? 0 : 5L  # constraint forces
 
     ri = SA[1,2,3]
     qi = SA[4,5,6,7]
@@ -65,7 +65,7 @@ function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
 
     blocks = BlockViews(m_nlp, n_nlp)
 
-    prob = DoublePendulumMOI{p}(model, params, Qr, Qq, R, r0, q0, rf, p_ee, goalcon, Xref,
+    prob = DoublePendulumMOI{n,m,p}(model, params, Qr, Qq, R, r0, q0, rf, p_ee, goalcon, Xref,
         n_nlp, m_nlp, N, L, p, ncons, rinds, qinds, xinds, uinds, λinds, blocks
     )
     initialize_sparsity!(prob)
@@ -116,6 +116,40 @@ function MOI.eval_objective_gradient(prob::DoublePendulumMOI, grad_f, x)
     obj(x) = MOI.eval_objective(prob, x)
     ForwardDiff.gradient!(grad_f, obj, x)  # TODO: use a cache
     return
+end
+
+function dircol_constraints(prob::DoublePendulumMOI, c, z)
+    model = prob.model
+    h = prob.params.h
+    xinds, uinds = prob.xinds, prob.uinds
+
+    ci = 1:4
+    for (i,k) in enumerate(1:prob.N-1)
+        θ1 = z[xinds[k]]
+        u1 = z[uinds[k]]
+        θ2 = z[xinds[k+1]]
+        c[ci] .= implicitmidpoint(model, θ1, u1, θ2, h)
+        ci = ci .+ 4
+    end
+end
+
+function ∇dircol_constraints(prob::DoublePendulumMOI, jac, z)
+    jac .= 0
+    J0 = NonzerosVector(jac, prob.blocks)
+    xinds, uinds = prob.xinds, prob.uinds
+
+    ci = 1:4
+    for (i,k) in enumerate(1:prob.N-1)
+        θ1 = z[xinds[k]]
+        u1 = z[uinds[k]]
+        θ2 = z[xinds[k+1]]
+        f(z) = implicitmidpoint(model, z[xinds[1]], z[uinds[1]], z[xinds[2]], h)
+        ∇f = ForwardDiff.jacobian(f, [θ1; u1; θ2])
+        J0[ci, xinds[k]] .= ∇f[:,xinds[1]] 
+        J0[ci, uinds[k]] .= ∇f[:,uinds[1]] 
+        J0[ci, xinds[k+1]] .= ∇f[:,xinds[2]] 
+        ci = ci .+ 4
+    end
 end
 
 function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
@@ -250,14 +284,22 @@ function ipopt_solve(prob::DoublePendulumMOI, x0; tol=1e-6, c_tol=1e-6, max_iter
     
     x_l = fill(-Inf,n_nlp)
     x_u = fill(+Inf,n_nlp)
-    x_l[1:3] = prob.r0[1]
-    x_u[1:3] = prob.r0[1]
-    x_l[4:7] = prob.q0[1]
-    x_u[4:7] = prob.q0[1]
-    x_l[8:10] = prob.r0[2]
-    x_u[8:10] = prob.r0[2]
-    x_l[11:14] = prob.q0[2]
-    x_u[11:14] = prob.q0[2]
+    for k = 1:2
+        for j = 1:prob.L
+            x_l[prob.rinds[k,j]] = prob.r0[j]
+            x_u[prob.rinds[k,j]] = prob.r0[j]
+            x_l[prob.qinds[k,j]] = prob.q0[j]
+            x_u[prob.qinds[k,j]] = prob.q0[j]
+        end
+    end
+    # x_l[1:3] = prob.r0[1]
+    # x_u[1:3] = prob.r0[1]
+    # x_l[4:7] = prob.q0[1]
+    # x_u[4:7] = prob.q0[1]
+    # x_l[8:10] = prob.r0[2]
+    # x_u[8:10] = prob.r0[2]
+    # x_l[11:14] = prob.q0[2]
+    # x_u[11:14] = prob.q0[2]
     c_l = zeros(m_nlp)
     c_u = zeros(m_nlp)
 
@@ -287,4 +329,19 @@ function ipopt_solve(prob::DoublePendulumMOI, x0; tol=1e-6, c_tol=1e-6, max_iter
 
     res = MOI.get(solver, MOI.VariablePrimal(), x)
     return res, solver
+end
+
+function randtraj(prob::DoublePendulumMOI)
+    z0 = zeros(prob.n_nlp)
+    for k = 1:prob.N
+        for j = 1:prob.L
+            z0[prob.rinds[k,j]] = @SVector randn(3)
+            z0[prob.qinds[k,j]] = normalize(@SVector randn(4))
+        end
+        if k < prob.N
+            z0[prob.uinds[k]] = @SVector randn(control_dim(prob.model)) 
+            z0[prob.λinds[k]] = @SVector randn(10) 
+        end
+    end
+    return z0
 end

@@ -9,7 +9,6 @@ using BenchmarkTools
 using FiniteDiff
 using SparseArrays
 using Plots
-include("visualization.jl")
 
 using MathOptInterface
 const MOI = MathOptInterface 
@@ -31,7 +30,7 @@ opt.N
 control(t) = SA[0.5 * (t > 0.5), cos(pi*t)*2]
 U = control.(opt.thist)
 x0 = MC.min2max(model, [0.0,0])
-Xref = MC.simulate(model, opt, U, x0)
+Xref, = MC.simulate(model, opt, U, x0)
 
 # Goal position
 xgoal = MC.min2max(model, [-deg2rad(20), deg2rad(40)])
@@ -111,8 +110,8 @@ Xref = map(1:opt.N) do k
     θ2 = 0 
     x0 = MC.min2max(model, SA[θ1, θ2])
 end
-visualize!(vis, model, x0)
 visualize!(vis, model, Xref, opt)
+Xref = [copy(xf) for i = 1:opt.N]
 
 #
 Qr = Diagonal(SA_F64[1,1,1.])
@@ -128,7 +127,7 @@ z0 = zeros(prob.n_nlp)
 U0 = [SA[0.0,0.0] for k = 1:prob.N-1]
 λ0 = [@SVector zeros(prob.p) for k = 1:prob.N-1]
 for k = 1:prob.N
-    z0[prob.xinds[k]] = Xref[k]
+    z0[prob.xinds[k]] = x0 
     if k < prob.N
         z0[prob.uinds[k]] = U0[k]
         z0[prob.λinds[k]] = λ0[k] 
@@ -138,7 +137,11 @@ end
 zsol, = MC.ipopt_solve(prob, z0, tol=1e-4, goal_tol=1e-6)
 Xsol = [zsol[xi] for xi in prob.xinds]
 Usol = [zsol[ui] for ui in prob.uinds]
+λsol = [zsol[λi] for λi in prob.λinds]
 visualize!(vis, model, Xsol, opt)
 
-uhist = hcat(Vector.(Usol)...)
-plot(uhist')
+Xsim,λsim = simulate(model, opt, Usol, Xsol[1])
+visualize!(vis, model, Xsim, opt)
+norm(λsim - λsol)
+
+plot(Usol)

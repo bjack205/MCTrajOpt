@@ -4,17 +4,63 @@ struct DoublePendulum <: TwoBody
     joint0::RevoluteJoint
     joint1::RevoluteJoint
     gravity::Float64
+    acrobot::Bool
 end
+control_dim(model::DoublePendulum) = model.acrobot ? 1 : 2
 
-function DoublePendulum(b1::RigidBody, b2::RigidBody; gravity::Bool=false)
+function DoublePendulum(b1::RigidBody, b2::RigidBody; gravity::Bool=false, acrobot::Bool=false)
     joint0 = RevoluteJoint(SA[0.0,0,0], SA[0,0,-0.5], SA[0,1,0])
     joint1 = RevoluteJoint(SA[0,0,0.5], SA[0,0,-0.5], SA[0,1,0])
     g = gravity ? 9.81 : 0.0
-    DoublePendulum(b1, b2, joint0, joint1, g)
+    DoublePendulum(b1, b2, joint0, joint1, g, acrobot)
 end
 
 basetran(model::DoublePendulum) = SA[0,0,0.]
 basequat(model::DoublePendulum) = SA[1,0,0,0.]
+
+function dynamics(model::DoublePendulum, θ, u)
+    m1,J1 = model.b1.mass, model.b1.J
+    m2,J2 = model.b2.mass, model.b2.J
+    r0,q0 = basetran(model), basequat(model)
+    l1,l2 = 1.0, 1.0 
+
+    θ1,    θ2    = x[1], x[2]
+    θ1dot, θ2dot = x[3], x[4]
+    s1,c1 = sincos(θ1)
+    s2,c2 = sincos(θ2)
+    c12 = cos(θ1 + θ2)
+
+    # mass matrix
+    m11 = m1*l1^2 + J1 + m2*(l1^2 + l2^2 + 2*l1*l2*c2) + J2
+    m12 = m2*(l2^2 + l1*l2*c2 + J2)
+    m22 = l2^2*m2 + J2
+    M = @SMatrix [m11 m12; m12 m22]
+
+    # bias term
+    tmp = l1*l2*m2*s2
+    b1 = -(2 * θ1dot * θ2dot + θ2dot^2)*tmp
+    b2 = tmp * θ1dot^2
+    B = @SVector [b1, b2]
+
+    # friction
+    c = 1.0
+    C = @SVector [c*θ1dot, c*θ2dot]
+
+    # gravity term
+    g1 = ((m1 + m2)*l2*c1 + m2*l2*c12) * g
+    g2 = m2*l2*c12*g
+    G = @SVector [g1, g2]
+
+    # equations of motion
+    τ = @SVector [0, u[1]]
+    θddot = M\(τ - B - G - C)
+    return @SVector [θ1dot, θ2dot, θddot[1], θddot[2]]
+end
+
+function implicitmidpoint(model::DoublePendulum, θ1, u1, θ2, h)
+    fmid = dynamics(model, (θ1 + θ2)/2, u1)
+    return θ1 + h*fmid - θ2
+end
 
 function min2max(model::DoublePendulum, q)
     θ1 = q[1]
@@ -444,7 +490,7 @@ function ∇²joint_constraints(model::DoublePendulum, x, λ)
 end
 
 function DEL(model::DoublePendulum, x1, x2, x3, λ, u1, u2, h)
-    @assert length(u1) == length(u2) == 2
+    @assert length(u1) == length(u2) == control_dim(model) 
     F1 = getwrenches(model, x1, u1)
     F2 = getwrenches(model, x2, u2)
     D2Ld(model, x1, x2, h) + D1Ld(model, x2, x3, h) + h*(F1 + F2)/2 + 
@@ -452,7 +498,7 @@ function DEL(model::DoublePendulum, x1, x2, x3, λ, u1, u2, h)
 end
 
 function DEL!(model::DoublePendulum, y, x1, x2, x3, λ, u1, u2, h; yi=1)
-    @assert length(u1) == length(u2) == 2
+    @assert length(u1) == length(u2) == control_dim(model) 
     yview = view(y, (1:12) .+ (yi-1))
     yview .= 0
 
@@ -623,13 +669,19 @@ end
 function getwrenches(model::DoublePendulum, x, u)
     x_0 = [model.joint0.p1; SA[1,0,0,0]]
     x_1, x_2 = splitstate(model, x)
-    ξ0_0, ξ0_1 = wrench(model.joint0, x_0, x_1, u[1])
-    ξ1_1, ξ1_2 = wrench(model.joint1, x_1, x_2, u[2])
+    if model.acrobot
+        ξ0_1 = @SVector zeros(6)
+        ξ1_1, ξ1_2 = wrench(model.joint1, x_1, x_2, u[1])
+    else
+        ξ0_0, ξ0_1 = wrench(model.joint0, x_0, x_1, u[1])
+        ξ1_1, ξ1_2 = wrench(model.joint1, x_1, x_2, u[2])
+    end
     return [ξ0_1 + ξ1_1; ξ1_2]
 end
 
 function getwrenches!(model::DoublePendulum, ξ, x, u; yi=1)
-    for j = 1:2
+    actuated_joints = model.acrobot ? (2:2) : (1:2)
+    for (i,j) in enumerate(actuated_joints)
         joint = j == 1 ? model.joint0 : model.joint1
         r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
         q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
@@ -638,8 +690,8 @@ function getwrenches!(model::DoublePendulum, ξ, x, u; yi=1)
         iF_2 = (1:3) .+ (j-1)*6  .+ (yi-1)
         iT_2 = (4:6) .+ (j-1)*6  .+ (yi-1)
 
-        F_1, T_1 = wrench1(joint, r_1, q_1, r_2, q_2, u[j]) 
-        F_2, T_2 = wrench2(joint, r_1, q_1, r_2, q_2, u[j]) 
+        F_1, T_1 = wrench1(joint, r_1, q_1, r_2, q_2, u[i]) 
+        F_2, T_2 = wrench2(joint, r_1, q_1, r_2, q_2, u[i]) 
         if (iF_1[1] - (yi-1)) > 0
             ξ[iF_1] .+= F_1
             ξ[iT_1] .+= T_1
@@ -651,10 +703,11 @@ function getwrenches!(model::DoublePendulum, ξ, x, u; yi=1)
 end
 
 function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi=1, s=1.0)
-    for j = 1:2
+    actuated_joints = model.acrobot ? (2:2) : (1:2)
+    for (i,j) in enumerate(actuated_joints)
         joint = j == 1 ? model.joint0 : model.joint1
         hasforce = !(joint isa RevoluteJoint)
-        iu_j = iu[j]:iu[j]
+        iu_j = iu[i]:iu[i]
         r_1, r_2 = gettran(model, x, j-1), gettran(model, x, j)
         q_1, q_2 = getquat(model, x, j-1), getquat(model, x, j)
         iF_1 = (1:3) .+ (j-2)*6 .+ (yi-1)
@@ -670,55 +723,55 @@ function ∇getwrenches!(model::DoublePendulum, jac, x, u; ix=1:14, iu=15:16, yi
         if (iF_1[1] - (yi-1)) > 0
 
             if hasforce 
-                F_11 = ∇force11(joint, r_1, q_1, r_2, q_2, u[j])
+                F_11 = ∇force11(joint, r_1, q_1, r_2, q_2, u[i])
                 @view(jac[iF_1, ir_1]) .+= F_11[1] * s
                 @view(jac[iF_1, iq_1]) .+= F_11[2] * s
 
-                F_12 = ∇force12(joint, r_1, q_1, r_2, q_2, u[j])
+                F_12 = ∇force12(joint, r_1, q_1, r_2, q_2, u[i])
                 @view(jac[iF_1, ir_2]) .+= F_12[1] * s
                 @view(jac[iF_1, iq_2]) .+= F_12[2] * s
 
-                F_1u = ∇force1u(joint, r_1, q_1, r_2, q_2, u[j])
+                F_1u = ∇force1u(joint, r_1, q_1, r_2, q_2, u[i])
                 @view(jac[iF_1, iu_j]) .+= F_1u * s
             end
 
-            T_11 = ∇torque11(joint, r_1, q_1, r_2, q_2, u[j])
+            T_11 = ∇torque11(joint, r_1, q_1, r_2, q_2, u[i])
             @view(jac[iT_1, ir_1]) .+= T_11[1] * s
             @view(jac[iT_1, iq_1]) .+= T_11[2] * s
 
-            T_12 = ∇torque12(joint, r_1, q_1, r_2, q_2, u[j])
+            T_12 = ∇torque12(joint, r_1, q_1, r_2, q_2, u[i])
             @view(jac[iT_1, ir_2]) .+= T_12[1] * s
             @view(jac[iT_1, iq_2]) .+= T_12[2] * s
 
-            T_1u = ∇torque1u(joint, r_1, q_1, r_2, q_2, u[j])
+            T_1u = ∇torque1u(joint, r_1, q_1, r_2, q_2, u[i])
             @view(jac[iT_1, iu_j]) .+= T_1u * s
         end
         if (ir_1[1] - (ix[1] - 1)) > 0
             if hasforce
-                F_21 = ∇force21(joint, r_1, q_1, r_2, q_2, u[j])
+                F_21 = ∇force21(joint, r_1, q_1, r_2, q_2, u[i])
                 @view(jac[iF_2, ir_1]) .+= F_21[1] * s
                 @view(jac[iF_2, iq_1]) .+= F_21[2] * s
             end
 
-            T_21 = ∇torque21(joint, r_1, q_1, r_2, q_2, u[j])
+            T_21 = ∇torque21(joint, r_1, q_1, r_2, q_2, u[i])
             @view(jac[iT_2, ir_1]) .+= T_21[1] * s
             @view(jac[iT_2, iq_1]) .+= T_21[2] * s
         end
 
         if hasforce
-            F_22 = ∇force22(joint, r_1, q_1, r_2, q_2, u[j])
+            F_22 = ∇force22(joint, r_1, q_1, r_2, q_2, u[i])
             @view(jac[iF_2, ir_2]) .+= F_22[1] * s
             @view(jac[iF_2, iq_2]) .+= F_22[2] * s
 
-            F_2u = ∇force2u(joint, r_1, q_1, r_2, q_2, u[j])
+            F_2u = ∇force2u(joint, r_1, q_1, r_2, q_2, u[i])
             @view(jac[iF_2, iu_j]) .+= F_2u * s
         end
 
-        T_22 = ∇torque22(joint, r_1, q_1, r_2, q_2, u[j])
+        T_22 = ∇torque22(joint, r_1, q_1, r_2, q_2, u[i])
         @view(jac[iT_2, ir_2]) .+= T_22[1] * s
         @view(jac[iT_2, iq_2]) .+= T_22[2] * s
 
-        T_2u = ∇torque2u(joint, r_1, q_1, r_2, q_2, u[j])
+        T_2u = ∇torque2u(joint, r_1, q_1, r_2, q_2, u[i])
         @view(jac[iT_2, iu_j]) .+= T_2u * s
     end
     return jac
@@ -726,6 +779,7 @@ end
 
 function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=20, tol=1e-12)
     X = [MVector(zero(x0)) for k = 1:params.N]
+    λhist = [@SVector zeros(10) for k = 1:params.N-1]
     X[1] = x0
     X[2] = x0
     M = 2
@@ -757,6 +811,7 @@ function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=
             # e = [e1; e2]
             if norm(e, Inf) < tol
                 # println("Converged in $i iters at time $(params.thist[k])")
+                λhist[k-1] = λ
                 break
             end
             # D = ∇DEL3(model, X[k-1], X[k], X[k+1], λ, F[k-1],F[k], h)
@@ -784,6 +839,6 @@ function simulate(model::DoublePendulum, params::SimParams, U, x0; newton_iters=
         end
 
     end
-    return X
+    return X, λhist
 
 end

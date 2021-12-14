@@ -7,7 +7,7 @@ using Test
 using Random
 using BenchmarkTools
 using FiniteDiff
-include("visualization.jl")
+# include("visualization.jl")
 
 using MathOptInterface
 const MOI = MathOptInterface 
@@ -266,6 +266,7 @@ e = @SVector randn(12)
 x = zeros(14)
 @test MC.err2fullstate!(model, x, e) ≈ MC.err2fullstate(model, e)
 
+## Simulation
 sim = SimParams(1.0, 0.01)
 torques(t) = SA[2.0; 1.0]
 U = torques.(sim.thist)
