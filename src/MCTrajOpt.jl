@@ -33,6 +33,7 @@ include("dp_ipopt.jl")
 
 include("visualization/bodies.jl")
 
+include("minimal_coordinates.jl")
 include("arm.jl")
 include("arm_ipopt.jl")
 

@@ -19,13 +19,14 @@ basetran(model::DoublePendulum) = SA[0,0,0.]
 basequat(model::DoublePendulum) = SA[1,0,0,0.]
 
 function dynamics(model::DoublePendulum, θ, u)
-    m1,J1 = model.b1.mass, model.b1.J
-    m2,J2 = model.b2.mass, model.b2.J
+    m1,J1 = model.b1.mass, model.b1.J[3,3]
+    m2,J2 = model.b2.mass, model.b2.J[3,3]
     r0,q0 = basetran(model), basequat(model)
     l1,l2 = 1.0, 1.0 
+    g = model.gravity
 
-    θ1,    θ2    = x[1], x[2]
-    θ1dot, θ2dot = x[3], x[4]
+    θ1,    θ2    = θ[1], θ[2]
+    θ1dot, θ2dot = θ[3], θ[4]
     s1,c1 = sincos(θ1)
     s2,c2 = sincos(θ2)
     c12 = cos(θ1 + θ2)

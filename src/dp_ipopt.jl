@@ -27,6 +27,7 @@ struct DoublePendulumMOI{Nx,Nu,p} <: MOI.AbstractNLPEvaluator
     λinds::Vector{SVector{p,Int}}
     blocks::BlockViews
 end
+ismincoord(::DoublePendulumMOI{Nx}) where Nx = Nx == 4
 
 function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
     Qr, Qq, R, x0, Xref; rf = nothing, p_ee = SA[0,0,0.5], minimalcoords::Bool=false
@@ -36,14 +37,16 @@ function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
     n = minimalcoords ? 2 * L :  7 * L
     m = control_dim(model)      # controls
     p = minimalcoords ? 0 : 5L  # constraint forces
+    @show n
 
     ri = SA[1,2,3]
     qi = SA[4,5,6,7]
     Nz = n + m + p
     rinds = [ri .+ ((k-1)*Nz + (i-1)*7) for k = 1:N, i = 1:L]
     qinds = [qi .+ ((k-1)*Nz + (i-1)*7) for k = 1:N, i = 1:L]
-    xinds = [[ri; qi] for (ri,qi) in zip(rinds,qinds)]
-    xinds = [[x1; x2] for (x1,x2) in eachrow(xinds)]
+    # xinds = [[ri; qi] for (ri,qi) in zip(rinds,qinds)]
+    # xinds = [[x1; x2] for (x1,x2) in eachrow(xinds)]
+    xinds = SVector{n}.([(k-1)*Nz .+ (1:n) for k = 1:N])
     uinds = SVector{m}.([(k-1)*Nz + n .+ (1:m) for k = 1:N-1])
     λinds = SVector{p}.([(k-1)*Nz + n + m .+ (1:p) for k = 1:N-1])
 
@@ -60,7 +63,11 @@ function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
     p_joints = (N-1)*p
     p_quatnorm = (N-1)*L
     p_goal = 3 * goalcon
-    m_nlp = p_del + p_joints + p_quatnorm + p_goal
+    if minimalcoords
+        m_nlp = (N-1)*2*L
+    else
+        m_nlp = p_del + p_joints + p_quatnorm + p_goal
+    end
     ncons = Dict(:DEL=>p_del, :joints=>p_joints, :quatnorm=>p_quatnorm)
 
     blocks = BlockViews(m_nlp, n_nlp)
@@ -92,12 +99,23 @@ function MOI.eval_objective(prob::DoublePendulumMOI, z)
     model = prob.model
     J = 0.0
     rinds, qinds = prob.rinds, prob.qinds
-    uinds = prob.uinds
+    xinds, uinds = prob.xinds, prob.uinds
     for k = 1:prob.N
-        for j = 1:prob.L
-            r = z[rinds[k,j]]
-            q = z[qinds[k,j]]
+        if ismincoord(prob)
+            xk = min2max(model, z[xinds[k]])
+            xref = min2max(model, prob.Xref[k])
+        else
             xref = prob.Xref[k]
+        end
+        for j = 1:prob.L
+            if ismincoord(prob)
+                r = xk[rinds[1,j]]
+                q = xk[qinds[1,j]]
+            else
+                r = z[rinds[k,j]]
+                q = z[qinds[k,j]]
+            end
+            # xref = prob.Xref[k]
             rref = gettran(model, xref, j)
             qref = getquat(model, xref, j)
             dr = r - rref
@@ -134,6 +152,8 @@ function dircol_constraints(prob::DoublePendulumMOI, c, z)
 end
 
 function ∇dircol_constraints(prob::DoublePendulumMOI, jac, z)
+    h = prob.params.h
+    model = prob.model
     jac .= 0
     J0 = NonzerosVector(jac, prob.blocks)
     xinds, uinds = prob.xinds, prob.uinds
@@ -153,6 +173,10 @@ function ∇dircol_constraints(prob::DoublePendulumMOI, jac, z)
 end
 
 function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
+    if ismincoord(prob)
+        return dircol_constraints(prob, c, z)
+    end
+
     h = prob.params.h
     rinds, qinds = prob.rinds, prob.qinds
     uinds, λinds = prob.uinds, prob.λinds
@@ -209,6 +233,10 @@ function MOI.eval_constraint(prob::DoublePendulumMOI, c, z)
 end
 
 function MOI.eval_constraint_jacobian(prob::DoublePendulumMOI, jac, z)
+    if ismincoord(prob)
+        return ∇dircol_constraints(prob, jac, z)
+    end
+
     jac .= 0
     J0 = NonzerosVector(jac, prob.blocks)
 
@@ -335,12 +363,20 @@ function randtraj(prob::DoublePendulumMOI)
     z0 = zeros(prob.n_nlp)
     for k = 1:prob.N
         for j = 1:prob.L
-            z0[prob.rinds[k,j]] = @SVector randn(3)
-            z0[prob.qinds[k,j]] = normalize(@SVector randn(4))
+            if ismincoord(prob)
+                z0[prob.xinds[k]] = @SVector randn(4)
+            else
+                z0[prob.rinds[k,j]] = @SVector randn(3)
+                z0[prob.qinds[k,j]] = normalize(@SVector randn(4))
+            end
         end
         if k < prob.N
             z0[prob.uinds[k]] = @SVector randn(control_dim(prob.model)) 
+            if !ismincoord(prob)
+                z0[prob.λinds[k]] = @SVector randn(10)
             z0[prob.λinds[k]] = @SVector randn(10) 
+                z0[prob.λinds[k]] = @SVector randn(10)
+            end
         end
     end
     return z0

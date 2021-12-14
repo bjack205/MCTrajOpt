@@ -15,14 +15,17 @@ const MOI = MathOptInterface
 const MC = MCTrajOpt
 
 ## Generate the model
+Random.seed!(1)
 body1 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
 body2 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
 model = DoublePendulum(body1, body2, gravity = true, acrobot=true)
 opt = SimParams(2.0, 0.05)
 
 # Goal position
-x0 = MC.min2max(model, [-pi, 0]) 
-xgoal = MC.min2max(model, [-deg2rad(00), deg2rad(00)])
+θ0 = SA[-pi, 0]
+θf = SA[0,0.]
+x0 = MC.min2max(model, θ0) 
+xgoal = MC.min2max(model, θf) 
 r_2 = MC.gettran(model, xgoal)[2]
 q_2 = MC.getquat(model, xgoal)[2]
 p_ee = SA[0,0,0.5]
@@ -85,3 +88,49 @@ norm(λsim - λsol)
 plot(Usol)
 
 model.joint0.p2
+
+
+#############################################
+# Minimal Coordinates
+#############################################
+
+Xref2 = [SA[0,0,0,0] for k = 1:opt.N]
+prob = MC.DoublePendulumMOI(model, opt, Qr, Qq, R, x0, Xref2, rf=r_ee, p_ee=p_ee, minimalcoords=true)
+
+# Create initial guess
+z0 = zeros(prob.n_nlp)
+U0 = [SA[randn()] for k = 1:prob.N-1]
+λ0 = [@SVector zeros(prob.p) for k = 1:prob.N-1]
+for k = 1:prob.N
+    z0[prob.xinds[k]] = θ0 
+    if k < prob.N
+        z0[prob.uinds[k]] = U0[k]
+        z0[prob.λinds[k]] = λ0[k] 
+    end
+end
+
+zsol, = MC.ipopt_solve(prob, z0, tol=1e-4, goal_tol=1e-6)
+Xsol = [zsol[xi] for xi in prob.xinds]
+Usol = [zsol[ui] for ui in prob.uinds]
+λsol = [zsol[λi] for λi in prob.λinds]
+if isdefined(Main, :vis)
+    visualize!(vis, model, Xsol, opt)
+end
+
+## Check functions
+ztest = MC.randtraj(prob)
+grad_f = zeros(prob.n_nlp)
+c = zeros(prob.m_nlp)
+rc = MOI.jacobian_structure(prob)
+row = [idx[1] for idx in rc]
+col = [idx[2] for idx in rc]
+jac = zeros(length(rc)) 
+jac0 = zeros(prob.m_nlp, prob.n_nlp)
+
+MOI.eval_objective(prob, ztest)
+MOI.eval_objective_gradient(prob, grad_f, ztest)
+
+MOI.eval_constraint(prob, c, ztest)
+MOI.eval_constraint_jacobian(prob, jac, ztest)
+FiniteDiff.finite_difference_jacobian!(jac0, (c,x)->MOI.eval_constraint(prob, c, x), ztest)
+@test sparse(row, col, jac, prob.m_nlp, prob.n_nlp) ≈ jac0
