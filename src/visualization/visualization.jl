@@ -18,7 +18,7 @@ function launchvis(model::RobotArm, x0)
         name = "body" * string(j)
         setobject!(vis[name], geom, mat)
         setobject!(vis[name]["com"], Triad())
-        settransform!(vis[name]["com"], LinearMap(I(3)*0.5))
+        settransform!(vis[name]["com"], LinearMap(I(3)*0.25))
     end
     open(vis)
     visualize!(vis, model, x0)
@@ -35,10 +35,15 @@ function visualize!(vis, model::RobotArm, x)
     end
 end
 
-function launchvis(body::DoublePendulum, x0)
+function launchvis(body::DoublePendulum, x0; geom=nothing)
     vis = Visualizer()
-    geom1 = Cylinder(Point(body.joint0.p2), Point(body.joint1.p1), 0.2)
-    geom2 = Cylinder(Point(body.joint1.p2), -Point(body.joint1.p2), 0.2)
+    if isnothing(geom)
+        geom1 = Cylinder(Point(body.joint0.p2), Point(body.joint1.p1), 0.2)
+        geom2 = Cylinder(Point(body.joint1.p2), -Point(body.joint1.p2), 0.2)
+    else
+        geom1 = geometry(geom[1])
+        geom2 = geometry(geom[2])
+    end
     setobject!(vis["body1"], geom1, MeshPhongMaterial(color=colorant"green"))
     setobject!(vis["body2"], geom2, MeshPhongMaterial(color=colorant"green"))
     setobject!(vis["body1"]["com"], Triad())

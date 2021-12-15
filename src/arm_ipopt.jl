@@ -2,9 +2,12 @@
 struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     model::RobotArm
     params::SimParams
-    Qr::Diagonal{Float64, SVector{3, Float64}}
-    Qq::Diagonal{Float64, SVector{4, Float64}}
-    R::Diagonal{Float64, SVector{Nu, Float64}}
+    Qr::Diagonal{Float64, SVector{3, Float64}}  # position penalty
+    Qq::Diagonal{Float64, SVector{4, Float64}}  # orientation penalty
+    Qν::Diagonal{Float64, SVector{3, Float64}}  # linear velocity penalty
+    Qω::Diagonal{Float64, SVector{3, Float64}}  # angular velocity penalty
+    Qe::Diagonal{Float64, SVector{3, Float64}}  # end-effector penalty
+    R::Diagonal{Float64, SVector{Nu, Float64}}  # control penalty
     r0::Vector{SVector{3,Float64}}  # initial position
     q0::Vector{SVector{4,Float64}}  # initial orientation
     rgoal::SVector{3,Float64}       # End-effector goal
@@ -25,7 +28,7 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
     λinds::Vector{SVector{Nc,Int}}
     blocks::BlockViews
     function ArmMOI(model::RobotArm, params::SimParams, Qr, Qq, R, x0, Xref; 
-        rf = nothing, p_ee = SA[0,0,0.5]
+        rf = nothing, p_ee = SA[0,0,0.5], Qν = Qr, Qω=Qν, Qe=Qr
     )
         @assert size(R,1) == model.numlinks
         N = params.N
@@ -67,7 +70,7 @@ struct ArmMOI{Nu,Nc} <: MOI.AbstractNLPEvaluator
         blocks = BlockViews(m_nlp, n_nlp)
 
         # Create type and initialize the sparsity pattern
-        prob = new{m,p}(model, params, Qr, Qq, R, r0, q0, rf, p_ee, goalcon, Xref,
+        prob = new{m,p}(model, params, Qr, Qq, Qν, Qω, Qe, R, r0, q0, rf, p_ee, goalcon, Xref,
             n_nlp, m_nlp, N, L, p, ncons, rinds, qinds, xinds, uinds, λinds, blocks
         )
         initialize_sparsity!(prob)
@@ -89,10 +92,16 @@ function initialize_sparsity!(prob::ArmMOI)
     return
 end
 
+function getendeffectorposition(prob::ArmMOI, x)
+    rf, qf = x[prob.rinds[1,end]], x[prob.qinds[1,end]]
+    return rf + Amat(qf)*prob.p_ee
+end
+
 function MOI.eval_objective(prob::ArmMOI, z)
     model = prob.model
     J = 0.0
     rinds, qinds = prob.rinds, prob.qinds
+    xinds = prob.xinds
     uinds = prob.uinds
     for k = 1:prob.N
         for j = 1:prob.L
@@ -107,9 +116,25 @@ function MOI.eval_objective(prob::ArmMOI, z)
             dq = q'qref
             J += 0.5 * (dr'prob.Qr*dr + min(1+dq, 1-dq) * 2.0)
         end
+
+        # End effector penalty
+        xk = z[xinds[k]]
+        e = getendeffectorposition(prob, xk) - prob.rgoal
+        J += 0.5 * (e'prob.Qe*e)
+
         if k < prob.N
             u = z[uinds[k]]
             J += 0.5 * u'prob.R*u
+
+            # Penalize velocity
+            h = prob.params.h
+            for j = 1:prob.L
+                r1, r2 = z[rinds[k,j]], z[rinds[k+1,j]]
+                q1, q2 = z[qinds[k,j]], z[qinds[k+1,j]]
+                νmid = (r2 - r1)/h
+                ωmid = 2*Hmat'L(q1)'q2/h
+                J += 0.5*(νmid'prob.Qν*νmid + ωmid'prob.Qω*ωmid)
+            end
         end
     end
     return J

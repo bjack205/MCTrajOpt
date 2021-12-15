@@ -547,13 +547,35 @@ using variational integrators in which only derivatives with respect to $x_3$ ar
 trajectory optimization needs the derivatives with respect to all of the inputs to the DEL
 equation. 
 
-\subsection{Penalizing Velocity}
-Provide details of how to penalize velocity.
-
-\subsection{Specifying}
-Problem formulation for optimizing over momentum values.
-
 \section{Results}
+An Ipopt-based solver for trajectory optimization in maximal coordinates was developed from 
+scratch in the Julia programming language. For maximal coordinates, automatic differentiation 
+was only used for the gradient 
+of the cost function: the Jacobian of all constraints were derived and implemented 
+analytically. For the minimal coordinate implementation, RigidBodyDynamics.jl was used to 
+compute the dynamics and dynamics Jacobians (using automatic differentiation) and the 
+dynamics were discretized using implicit 
+midpoint integration. All timing results were obtained on an Intel i7-1165G7 processor with
+16 GB of memory.
+
+\subsection{Acrobot}
+The acrobot problem is a canonical benchmark problem for generating motion plans for 
+underactuated systems. The acrobot is a double pendulum with actuation only at the ``elbow''
+joint. \todo{Add dynamic parameters}
+
+In addtion to the dynamics constraints, both minimal and maximal coordinate solvers 
+constrained the end effector to be at the upright position:
+\begin{equation}
+    r_N^{(M)} + A(q_N^{(M)}) p_\text{ee} - r_\text{goal},
+\end{equation}
+where $p_\text{ee}$ is the location of the end effector in the last links's frame, and
+$r_\text{goal}$ is the location of the goal in the world frame.
+For minimal coordinates, $r_N^{(M)}$ and $q_N^{(M)}$ were calculated using forward 
+kinematics using \texttt{RigidBodyDynamics.jl}. The objectives for both solvers only 
+penalized distance of the end effector to the goal for all time steps, and some small 
+regularization on the control values. Both solvers were initialized with identical 
+initial guesses 
+
 \begin{figure}
     \centering
     \includegraphics[width=0.9\columnwidth,height=5cm]{figs/acrobot_torques.tikz}
@@ -602,9 +624,6 @@ Problem formulation for optimizing over momentum values.
     }
 \end{table}
 
-
-\subsection{Double Pendulum}
-Give results for the double pendulum. Try solving the acrobot problem.
 
 \subsection{6 DOF Arm}
 Give results for the arm, with and without gravity. 

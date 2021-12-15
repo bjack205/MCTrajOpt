@@ -19,10 +19,17 @@ const RBD = RigidBodyDynamics
 
 ## Generate the model
 Random.seed!(1)
-body1 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
-body2 = RigidBody(1.0, Diagonal([0.1, 1.0, 1.0]))
-model = DoublePendulum(body1, body2, gravity = true, acrobot=true)
-opt = SimParams(2.0, 0.05)
+const ℓ = 0.5
+geom1 = MC.CylindricalBody(0.03, ℓ, :aluminum)
+geom2 = MC.CylindricalBody(0.03, ℓ, :aluminum)
+body1 = RigidBody(geom1)
+body2 = RigidBody(geom2)
+
+# body1 = RigidBody(1.0, Diagonal([1.0, 1.0, 0.01]))
+# body2 = RigidBody(1.0, Diagonal([1.0, 1.0, 0.01]))
+model = DoublePendulum(body1, body2, gravity = true, acrobot=true, len=ℓ)
+opt = SimParams(2.0, 0.02)
+opt.N
 
 # Goal position
 θ0 = SA[-pi, 0, 0,0]
@@ -31,7 +38,7 @@ x0 = MC.min2max(model, θ0[1:2])
 xgoal = MC.min2max(model, θgoal[1:2]) 
 r_2 = MC.gettran(model, xgoal)[2]
 q_2 = MC.getquat(model, xgoal)[2]
-p_ee = SA[0,0,0.5]
+p_ee = SA[0,0,ℓ/2]
 r_ee = r_2 + MC.Amat(q_2)*p_ee
 
 # Reference trajectory is just the goal position
@@ -39,22 +46,27 @@ Xref_min = [copy(θgoal) for k = 1:opt.N]
 Xref_max = map(x->MC.min2max(model, x), Xref_min)
 
 # Set up the problems
-Qr = Diagonal(SA_F64[1,1,1.])
+Qr = Diagonal(SA_F64[1,1,1.]) * 1
 Qq = Diagonal(SA_F64[1,1,1,1.])
-R = Diagonal(SA_F64[1e-3])
+R = Diagonal(@SVector fill(1e-1, MC.control_dim(model)))
 prob_max = MC.DoublePendulumMOI(model, opt, Qr, Qq, R, x0, Xref_max, rf=r_ee, p_ee=p_ee)
 
 p_ee2 = p_ee - model.joint1.p2  # adjust end effector position to be relative to joint
 prob_min = MC.DoublePendulumMOI(model, opt, Qr, Qq, R, x0, Xref_min, rf=r_ee, p_ee=p_ee2, minimalcoords=true)
 
 # Create initial guess
-Random.seed!(1)
-U0 = [SA[randn()] for k = 1:prob_max.N-1]
+Random.seed!(2)
+U0 = [SA[0*sin(t*2pi) + 0.0*randn() + t*5 - 0sin(t*pi/(0.2))*(t<0.2)] for t in opt.thist]
+# plot(U0)
+Xsim,λsim = simulate(model, opt, U0, x0)
+visualize!(vis, model, Xsim, opt)
 
 z0_min = let prob = prob_min
     z0 = zeros(prob.n_nlp)
     for k = 1:prob.N
         z0[prob.xinds[k]] = θ0
+        # z0[prob.xinds[k]] = θlin[k] 
+        # z0[prob.xinds[k]] = θsim[k]
         if k < prob.N
             z0[prob.uinds[k]] = U0[k]
         end
@@ -65,11 +77,15 @@ end
 z0_max = let prob = prob_max
     z0 = zeros(prob.n_nlp)
     λ0 = [@SVector zeros(prob.p) for k = 1:prob.N-1]
+    _,λsim = simulate(model, opt, U0, x0)
     for k = 1:prob.N
         z0[prob.xinds[k]] = x0
+        # z0[prob.xinds[k]] = Xsim[k]
+        # z0[prob.xinds[k]] = Xlin[k]
         if k < prob.N
             z0[prob.uinds[k]] = U0[k]
-            z0[prob.λinds[k]] = λ0[k] 
+            # z0[prob.λinds[k]] = λ0[k] 
+            z0[prob.λinds[k]] = λsim[k]
         end
     end
     z0
@@ -81,7 +97,7 @@ MOI.eval_objective(prob_max, z0_max)
 
 # Solve
 outfile = "ipopt.out"
-zsol_max, solver_max = MC.ipopt_solve(prob_max, z0_max, tol=1e-4, goal_tol=1e-6)
+zsol_max, solver_max = MC.ipopt_solve(prob_max, z0_max, tol=1e-0, c_tol=1e-5, goal_tol=1e-4)
 Xsol_max = [zsol_max[xi] for xi in prob_max.xinds]
 Usol_max = [zsol_max[ui] for ui in prob_max.uinds]
 λsol_max = [zsol_max[λi] for λi in prob_max.λinds]
@@ -93,7 +109,8 @@ tsolve_max = MOI.get(solver_max, MOI.SolveTimeSec())
 jacdensity_max = MC.getjacobiandensity(prob_max)
 nnz_max = length(MOI.jacobian_structure(prob_max))
 
-zsol_min, solver_min = MC.ipopt_solve(prob_min, z0_min, tol=1e-4, goal_tol=1e-6)
+##
+zsol_min, solver_min = MC.ipopt_solve(prob_min, z0_min, tol=1e-0, c_tol=1e-5, goal_tol=1e-4)
 Xsol_min = [zsol_min[xi] for xi in prob_min.xinds]
 Usol_min = [zsol_min[ui] for ui in prob_min.uinds]
 λsol_min = [zsol_min[λi] for λi in prob_min.λinds]
@@ -108,7 +125,7 @@ nnz_min = length(MOI.jacobian_structure(prob_min))
 
 ## Visualizer
 if !isdefined(Main, :vis)
-    vis = launchvis(model, x0)
+    vis = launchvis(model, x0; geom=[geom1, geom2])
 end
 visualize!(vis, model, Xsol_max, opt)
 visualize!(vis, model, Xmin_max, opt)
@@ -133,6 +150,8 @@ MOI.eval_objective(prob_max, zmin_max)
 ## Get EE Position
 ee_max = map(x->MC.getendeffectorposition(prob_max, x), Xsol_max)
 ee_min = map(x->MC.getendeffectorposition(prob_min, x), Xsol_min)
+ee_minmax = map(x->MC.getendeffectorposition(prob_max, x), Xmin_max)
+norm(ee_minmax-ee_min)
 
 ## Plots
 using PGFPlotsX

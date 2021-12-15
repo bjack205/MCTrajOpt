@@ -1,7 +1,5 @@
 import Pkg; Pkg.activate(joinpath(@__DIR__, ".."))
 using MCTrajOpt
-g = rand(3)
-MCTrajOpt.cayleymap(g) ≈ 1/sqrt(1 + g'g / 4) * [1; g/2]
 using ForwardDiff
 using StaticArrays
 using LinearAlgebra
@@ -13,7 +11,7 @@ using Colors
 using SparseArrays
 using Rotations
 using Plots
-# include("visualization.jl")
+using RobotDynamics
 
 using MCTrajOpt: CylindricalBody
 using MathOptInterface
@@ -37,7 +35,7 @@ joints = [
     RevoluteJoint([0,0,geom[4].length/2], [0,0,-geom[5].length/2],[0,0,1]),
     RevoluteJoint([0,0,geom[5].length/2], [0,0,-geom[6].length/2],[0,1,0])
 ]
-arm = MC.RobotArm(geom, joints, gravity=true)
+arm = MC.RobotArm(geom, joints, gravity=false)
 @test arm.numlinks == 6
 
 ## 
@@ -60,8 +58,12 @@ xgoal = MC.min2max(arm, θf)
 visualize!(vis, arm, xgoal)
 r_2 = MC.gettran(arm, xgoal, arm.numlinks)
 q_2 = MC.getquat(arm, xgoal, arm.numlinks)
-p_ee = SA[0,0,geom[3].length/2]
+p_ee = SA[0,0,geom[end].length/2]
 r_ee = r_2 + MC.Amat(q_2)*p_ee
+
+using GeometryBasics, Colors, MeshCat
+setobject!(vis["goal"], Sphere(Point3(r_ee...), 0.05), MeshPhongMaterial(color=colorant"green"))
+
 
 # Generate the reference trajectory
 opt = SimParams(1.0, 0.02)
@@ -77,10 +79,14 @@ visualize!(vis, arm, Xref, opt)
 Xnom = [copy(x0) for k = 1:opt.N]
 
 ## Set up the problem
-Qr = Diagonal(SA_F64[1,1,1.])
-Qq = Diagonal(SA_F64[1,1,1,1.])
-R = Diagonal(@SVector fill(1e-2, arm.numlinks))
-prob = MC.ArmMOI(arm, opt, Qr, Qq, R, x0, Xref, rf=r_ee, p_ee=p_ee)
+eeonly = true
+Qr = Diagonal(SA_F64[1,1,1.]) * !eeonly
+Qq = Diagonal(SA_F64[1,1,1,1.]) * !eeonly
+Qν = Diagonal(@SVector fill(0.1, 3)) * !eeonly
+Qω = Diagonal(@SVector fill(0.1, 3)) * !eeonly
+Qe = Diagonal(@SVector fill(10.0, 3))
+R = Diagonal(@SVector fill(1e-2, arm.numlinks)) * 0
+prob = MC.ArmMOI(arm, opt, Qr, Qq, R, x0, Xref, rf=r_ee, p_ee=p_ee, Qν=Qν, Qω=Qω, Qe=Qe)
 
 # # Form the reference trajectory
 # Uref = torques.(sim.thist)
@@ -112,26 +118,58 @@ FiniteDiff.finite_difference_jacobian!(jac,
 #############################################
 ## Solve w/ Ipopt
 #############################################
-Qr = Diagonal(SA_F64[1,1,1.])
-Qq = Diagonal(SA_F64[1,1,1,1.])
-R = Diagonal(@SVector fill(1e-2, arm.numlinks)) * 1e-2
-prob = MC.ArmMOI(arm, opt, Qr, Qq, R, x0, Xref, rf=r_ee, p_ee=p_ee)
+eeonly = true 
+Qr = Diagonal(SA_F64[1,1,1.]) * !eeonly
+Qq = Diagonal(SA_F64[1,1,1,1.]) * !eeonly
+Qν = Diagonal(@SVector fill(0.1, 3)) * eeonly
+Qω = Diagonal(@SVector fill(0.1, 3)) * eeonly
+Qe = Diagonal(@SVector fill(10.0, 3))
+R = Diagonal(@SVector fill(1e-1, arm.numlinks)) 
+prob = MC.ArmMOI(arm, opt, Qr, Qq, R, x0, Xref, rf=r_ee, p_ee=p_ee, Qν=Qν, Qω=Qω, Qe=Qe)
 
 z0 = zeros(prob.n_nlp)
 U0 = [@SVector zeros(prob.L) for k = 1:prob.N-1]
 λ0 = [@SVector zeros(prob.p) for k = 1:prob.N-1]
-prob.xinds[1]
-Xref[1]
 for k = 1:prob.N
-    z0[prob.xinds[k]] = Xref[k]
-    # z0[prob.xinds[k]] = x0 
+    # z0[prob.xinds[k]] = Xref[k]
+    z0[prob.xinds[k]] = Xnom[k]
     if k < prob.N
         z0[prob.uinds[k]] = U0[k]
         z0[prob.λinds[k]] = λ0[k] 
     end
 end
 
-zsol, = MC.ipopt_solve(prob, z0, tol=1e-4)
+zsol,solver = MC.ipopt_solve(prob, z0, tol=1e-2, c_tol=1e-6)
 Xsol = [zsol[xi] for xi in prob.xinds]
 Usol = [zsol[ui] for ui in prob.uinds]
 visualize!(vis, arm, Xsol, opt)
+
+tsolve = MOI.get(solver, MOI.SolveTimeSec())
+data = MC.parseipoptoutput("ipopt.out")
+jacnnz = length(MOI.jacobian_structure(prob))
+jacdensity = MC.getjacobiandensity(prob)
+
+using LaTeXTabulars
+tikzdir = joinpath(dirname(pathof(MCTrajOpt)), "..", "tex", "figs")
+topercent(x) = string(round(x*100, digits=1)) * raw"\%"
+latex_tabular(joinpath(tikzdir, "arm_data.tex"),
+    Tabular("lcl"),
+    [
+        Rule(:top),
+        ["Value", "6dof Arm"],
+        Rule(:mid),
+        ["Variables", prob.n_nlp],
+        ["Constraints", prob.m_nlp],
+        ["nnz(jac)", jacnnz],
+        ["Jac density", topercent(jacdensity)],
+        ["Iters", data["iter"][end]],
+        ["Cost", round(data["objective"][end])],
+        ["Run time (s)", round(tsolve, digits=2)], 
+        Rule(:bottom)
+    ]
+)
+
+plot(data["iter"], data["objective"])
+plot(data["iter"], data["inf_pr"], yscale=:log10)
+
+plot(Usol)

@@ -481,15 +481,15 @@ function simulate(model::RobotArm, params::SimParams, U, x0; newton_iters=20, to
 
             DEL!(model, e, X[k-1], X[k], X[k+1], λ[k], u1,u2, h)
             joint_constraints!(model, econ, X[k+1])
-            if norm(e, Inf) < tol
-                break
-            end
             H .= 0
             ∇DEL3!(model, H, X[k-1], X[k], X[k+1], λ[k], u1, u2, h)
             Δ = -(H\e)
             err2fullstate!(model, Δx, Δ[xi])
             compose_states!(model, X[k+1], X[k+1], Δx)
-            λ[k] += Δ[yi]
+
+            if norm(e, Inf) < tol
+                break
+            end
 
             if i == newton_iters
                 @warn "Newton failed to converge within $i iterations at timestep $k"

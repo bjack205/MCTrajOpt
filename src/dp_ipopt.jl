@@ -86,7 +86,7 @@ function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
     prob
 end
 
-function getjacobiandensity(prob::DoublePendulumMOI)
+function getjacobiandensity(prob)
     nnz = length(MOI.jacobian_structure(prob))
     return nnz / (prob.n_nlp * prob.m_nlp)
 end
@@ -126,22 +126,36 @@ function MOI.eval_objective(prob::DoublePendulumMOI, z)
         else
             xk = z[xinds[k]]
             xref = prob.Xref[k]
-        for j = 2:prob.L
-            r = gettran(model, xk, j)
-            q = getquat(model, xk, j)
-            e = r + Amat(q)*prob.p_ee - prob.rgoal
-            J += 0.5 * e'prob.Qr*e
-            # rref = gettran(model, xref, j)
-            # qref = getquat(model, xref, j)
-            # dr = r - rref
-            # dq = q - qref
-            # c[ci] = rf + Amat(qf)*prob.p_ee - prob.rgoal
-            # J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
-        end
+            for j = 2:prob.L
+                r = gettran(model, xk, j)
+                q = getquat(model, xk, j)
+                e = r + Amat(q)*prob.p_ee - prob.rgoal
+                J += 0.5 * e'prob.Qr*e
+                # rref = gettran(model, xref, j)
+                # qref = getquat(model, xref, j)
+                # dr = r - rref
+                # dq = q - qref
+                # c[ci] = rf + Amat(qf)*prob.p_ee - prob.rgoal
+                # J += 0.5 * (dr'prob.Qr*dr + dq'prob.Qq*dq)
+            end
         end
         if k < prob.N
             u = z[uinds[k]]
             J += 0.5 * u'prob.R*u
+
+            if !ismincoord(prob)
+                # Penalize velocity
+                h = prob.params.h
+                for j = 1:prob.L
+                    r1, r2 = z[rinds[k,j]], z[rinds[k+1,j]]
+                    q1, q2 = z[qinds[k,j]], z[qinds[k+1,j]]
+                    Qν = Diagonal(@SVector fill(1e-4, 3))
+                    Qω = Diagonal(@SVector fill(1e-4, 3))
+                    νmid = (r2 - r1)/h
+                    ωmid = 2*Hmat'L(q1)'q2/h
+                    # J += 0.5*(νmid'Qν*νmid + ωmid'Qω*ωmid)
+                end
+            end
         end
     end
     return J

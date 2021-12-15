@@ -8,9 +8,9 @@ struct DoublePendulum <: TwoBody
 end
 control_dim(model::DoublePendulum) = model.acrobot ? 1 : 2
 
-function DoublePendulum(b1::RigidBody, b2::RigidBody; gravity::Bool=false, acrobot::Bool=false)
-    joint0 = RevoluteJoint(SA[0.0,0,0], SA[0,0,-0.5], SA[0,1,0])
-    joint1 = RevoluteJoint(SA[0,0,0.5], SA[0,0,-0.5], SA[0,1,0])
+function DoublePendulum(b1::RigidBody, b2::RigidBody; gravity::Bool=false, acrobot::Bool=false, len=0.5)
+    joint0 = RevoluteJoint(SA[0.0,0,0], SA[0,0,-len/2], SA[0,1,0])
+    joint1 = RevoluteJoint(SA[0,0,len/2], SA[0,0,-len/2], SA[0,1,0])
     g = gravity ? 9.81 : 0.0
     DoublePendulum(b1, b2, joint0, joint1, g, acrobot)
 end
