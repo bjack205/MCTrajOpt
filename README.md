@@ -16,3 +16,9 @@ Other notable files:
 
 ## Examples
 The examples in the paper can be run from the scripts in the `examples` directory.
+
+Output trajectories:
+
+| Minimal coords | Maximal Coords | Arm |
+| -------------  | -------------- | --- |
+| <img src="https://github.com/bjack205/MCTrajOpt/blob/main/examples/acrobot_min.gif" alt="min coord" width="300"/> | <img src="https://github.com/bjack205/MCTrajOpt/blob/main/examples/acrobot_max.gif" alt="max coord" width="300"/> | <img src="https://github.com/bjack205/MCTrajOpt/blob/main/examples/arm.gif" alt="min coord" width="300"/>
