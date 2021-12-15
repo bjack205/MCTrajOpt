@@ -27,7 +27,19 @@
 \maketitle
 
 \begin{abstract}
-    A cool abstract
+    Efficiently generating motion plans for systems with inherent sparsity in their 
+    dynamics is an outstanding challenge in the robotics community, especially since 
+    popular DDP-based approaches do not recognize or exploit this structure. 
+    This project explores this topic by solving trajectory optimization problems for 
+    rigid body systems represented in maximal coordinates and discrete variational 
+    integrators. 
+    Trajectory optimization problems for an acrobot and 6 degree-of-freedom robot arm 
+    are solved in maximal coordinates. The acrobot trajectories are compared against 
+    those generated with a standard direct collocation method using implicit midpoint 
+    integration. The results suggest that using Ipopt to solve trajectory optimization 
+    problems in maximal coordinates provides no advantage over those expressed minimal 
+    coordinates. The solves took many iterations to converge, and frequently failed 
+    to converge at all. 
 \end{abstract}
 
 \section{Motivation}
@@ -55,29 +67,14 @@ of micro-robots, the dimensionality grows to hundreds of degrees of freedom. And
 systems, such as soft robotics or fluid control where the fidelity of the system dynamics is
 dependent on discretizing a continuous system into a set of finite elements, the number of 
 degrees of freedom becomes arbitrarily large. While the dimensionality of the state vectors
-describing these systems is often very large, they almost have a unique and sparse coupling
-between elements of the state: e.g. links in a robot arm are only connected to 1-3 other, 
+describing these systems is often very large, they generally have a unique and sparse coupling
+between elements of the state: e.g. links in a robot arm are only connected to 1-3 other 
 links via joints, members of a multi-agent team often only communicate locally with the 
 robots with a given radius, or finite elements that only couple directly with their 
 neighboring elements. When these systems are linearized about some point, this structure 
 shows up as sparsity in the underlying matrices, where often 80-99\% of the matrix is zeros,
 and only 1-20\% contains meaningful data. Leveraging this inherent sparsity in the system 
 dynamics is naturally critical to generating efficient motion plans for these systems.
-
-While sampling-based and graph-based methods for motion planning work well for systems of 
-few dimensions, they become computationally intractable above a dozen or so dimensions,
-thanks to the infamous ``curse of dimensionality.'' Optimization-based 
-approaches, on the other hand, do not suffer from the same poor scaling properties, and
-large-scale optimization with millions of decision variables is relatively common in the 
-areas of operations research and machine learning. Unlike many of the problems in these 
-areas, which are either formed as well-structured unconstrained nonlinear optimization, 
-problems Linear Programs (LPs), or Quadratic Programs (QPs)---all of which have mature and 
-sophisticated algorithms and software implementations for efficiently solving large 
-optimization problems---optimization-based motion planning problems such as trajectory 
-optimization are nonlinear programs (NLPs) with nonlinear equality constraints that often 
-make the problem extremely difficult to solve. Only a few general-purpose off-the-shelf 
-NLP solvers are commonly used or under active development 
-\cite{wachter_implementation_2006,gill_SNOPT_2005}.
 
 \begin{figure}[t]
     \centering
@@ -93,6 +90,21 @@ NLP solvers are commonly used or under active development
     }
 \end{figure}
 
+% While sampling-based and graph-based methods for motion planning work well for systems of 
+% few dimensions, they become computationally intractable above a dozen or so dimensions,
+% thanks to the infamous ``curse of dimensionality.'' Optimization-based 
+% approaches, on the other hand, do not suffer from the same poor scaling properties, and
+% large-scale optimization with millions of decision variables is relatively common in the 
+% areas of operations research and machine learning. Unlike many of the problems in these 
+% areas, which are either formed as well-structured unconstrained nonlinear optimization, 
+% problems Linear Programs (LPs), or Quadratic Programs (QPs)---all of which have mature and 
+% sophisticated algorithms and software implementations for efficiently solving large 
+% optimization problems---optimization-based motion planning problems such as trajectory 
+% optimization are nonlinear programs (NLPs) with nonlinear equality constraints that often 
+% make the problem extremely difficult to solve. Only a few general-purpose off-the-shelf 
+% NLP solvers are commonly used or under active development 
+% \cite{wachter_implementation_2006,gill_SNOPT_2005}.
+
 The purpose of this project is to demonstrate the performance of the well-known Ipopt solver
 when solving motion planning problems for systems with lots of sparsity in the dynamics. 
 In particular, this project focuses on implementing trajetory optimization in maximal 
@@ -100,11 +112,9 @@ coordinates using discrete variational integrators. Representing rigid-body syst
 maximal coordinates has some appealing properties, namely that world or task-based goals 
 and constraints, such as the location of an end-effector for manipulation tasks, are 
 trivially expressed in maximal coordinates. Additionally, some recent studies have shown
-that local control methods such as LQR perform better in maximal coordinates, which is 
-understandable give than the local linearization of a system in maximal coordinates provides
-more information than one expressed in minimal coorindates \cite{brudigam_LinearTime_2020,
-brudigam2021linear}.  Lastly, by treating a 
-mechanism as a finite set of inidivudal rigid bodies linked together by joints, we can 
+that local control methods such as LQR perform better in maximal coordinate
+\cite{brudigam_LinearTime_2020,brudigam2021linear}.  Lastly, by treating a 
+mechanism as a finite set of individual rigid bodies linked together by joints, we can 
 achieve an extremely high degree of generality and potentially open the door for 
 parallelizable algorithms that will hopefully more than offset the cost of solving a larger
 optimization problem \cite{baraff_Lineartime_1996}. While some researchers have attempted 
@@ -114,7 +124,8 @@ variational integrators
 which offer many benefits over the more traditional integration methods used in previous 
 studies \cite{manchester_Variational_2017,brudigam_LinearTime_2020,marsden2001discrete}. 
 No previous paper has published any sucessful results using this approach, so 
-the goal of this paper is to explore the potential of this approach.
+the goal of this paper is to explore the potential of combining maximal coordinates, 
+discrete variational integrators, and trajectory optimization.
 
 
 \section{Background}
@@ -355,7 +366,7 @@ and an edge from $i$ to $j$ denotes a joint between body $i$ and body $j$. The d
 of the edge provides the convention for applying forces and torques on each body. We assume 
 that there is only ever a single edge between a pair of nodes. We denote the graph 
 $\mathcal{G}$ with edge set $\mathcal{E}$. The function $\mathcal{N}_1(j)$ returns the
-outbound set of vertices from node $j$ $\{i \mid (j,i) \in \mathcal{E}\}$, 
+outbound set of vertices from node $j$: $\{i \mid (j,i) \in \mathcal{E}\}$, 
 and $\mathcal{N}_2(j)$ likewise returns the inbound set of vertices 
 $\{ i \mid (i,j) \in \mathcal{E}\}$. The joint constraint function $c(\mathbf{x})$ is then 
 the concatenation of the pairwise joint constraints for each edge in $\mathcal{E}$. For 
@@ -436,21 +447,21 @@ define as the \textit{discrete Lagrangian}:
     \begin{align}
         L_d(\mathbf{x}_1, \mathbf{x}_2) 
             &= h L(\mathbf{x}_\text{mid}(x_1, x_2), \mathbf{v}_\text{mid}(x_1, x_2)) \\
-        = \sum_{j=1}^M &\half G_v(x_1^{(j)}, x_2^{(j)})^T M^{(j)} G_v(x_1^{(j)}, x_2^{(j)}) \nonumber \\
-        &- m^{(j)} g e_3^T G_x(x_1^{(j)}, x_2^{(j)}) \label{eq:discrete_lagrangian}
+        = \sum_{j=1}^M &\half W_v(x_1^{(j)}, x_2^{(j)})^T M^{(j)} W_v(x_1^{(j)}, x_2^{(j)}) \nonumber \\
+        &- m^{(j)} g e_3^T W_x(x_1^{(j)}, x_2^{(j)}) \label{eq:discrete_lagrangian}
     \end{align}
 \end{subequations}
 where the pose at the midpoint is approximated as:
 \begin{equation} \label{eq:quad_pose}
-    Q_x(x_1, x_2) = \begin{bmatrix}
+    W_x(x_1, x_2) = \begin{bmatrix}
         \half (r_1 + r_2) \\ q_1
     \end{bmatrix}
 \end{equation}
 and the velocity at the midpoint is approximated as:
 \begin{equation} \label{eq:quad_vel}
-    Q_v(x_1, x_2) = \begin{bmatrix}
-        \frac{1}{h}(r_2 - r_1) \\ 
-        \frac{2}{h} H^T L(q_1)^T q_2
+    W_v(x_1, x_2) = \frac{1}{h} \begin{bmatrix}
+        (r_2 - r_1) \\ 
+        2{h} H^T L(q_1)^T q_2
     \end{bmatrix}
 \end{equation}
 To achieve higher-order integrators, simply replace these functions with higher-order 
@@ -503,7 +514,7 @@ $\delta \mathbf{x}_N$ terms from summation, we get:
 \end{equation}
 Since $\delta \mathbf{x}_1$ and $\delta \mathbf{x}_N$ are equal to zero 
 (no variation at the endpoints), and the summation must be equal to zero for any 
-arbitrary $\delta \mathbf{x}_k$, then the terms of the must be equal to 0. We now obtain
+arbitrary $\delta \mathbf{x}_k$, then the terms of the summation must be equal to 0. We now obtain
 the \textit{Discrete Euler-Lagrange Equation} (DEL) for a multi-body system:
 \begin{multline}
     \mathbb{D}_2^T L_d(\mathbf{x}_{k-1}, \mathbf{x}_k)
@@ -566,7 +577,7 @@ An Ipopt-based solver for trajectory optimization in maximal coordinates was dev
 scratch in the Julia programming language. For maximal coordinates, automatic differentiation 
 was only used for the gradient 
 of the cost function: the Jacobian of all constraints were derived and implemented 
-analytically. For the minimal coordinate implementation, RigidBodyDynamics.jl was used to 
+analytically. For the minimal coordinate implementation, \texttt{RigidBodyDynamics.jl} was used to 
 compute the dynamics and dynamics Jacobians (using automatic differentiation) and the 
 dynamics were discretized using implicit 
 midpoint integration. All timing results were obtained on an Intel i7-1165G7 processor with
@@ -579,9 +590,10 @@ calculated assuming each link was a cylindrical body of aluminum of uniform dens
 \subsection{Acrobot}
 The acrobot problem is a canonical benchmark problem for generating motion plans for 
 underactuated systems. The acrobot is a double pendulum with actuation only at the ``elbow''
-joint.
+joint. This problem was solved using both the maximal coordinate solver and an implementation
+of direct collocation in minimal coordinates using implicit midpoint integration.
 
-In addtion to the dynamics constraints, both minimal and maximal coordinate solvers 
+In addition to the dynamics constraints, both minimal and maximal coordinate solvers 
 constrained the end effector to be at the upright position:
 \begin{equation}
     r_N^{(M)} + A(q_N^{(M)}) p_\text{ee} - r_\text{goal},
@@ -591,9 +603,10 @@ $r_\text{goal}$ is the location of the goal in the world frame.
 For minimal coordinates, $r_N^{(M)}$ and $q_N^{(M)}$ were calculated using forward 
 kinematics using \texttt{RigidBodyDynamics.jl}. The objectives for both solvers only 
 penalized distance of the end effector to the goal for all time steps, and some 
-regularization on the control values. Both solvers were initialized with identical 
-initial guess, which provided the initial state for all states, a control of $5 t$ for 
-the time $t$. The joint forces for the maximal coordinate solver were provided the forces 
+regularization on the control values, such that they would have identical costs for 
+equivalent trajectories. Both solvers were initialized with identical 
+initial guesses, which copied the initial state for all states, a control of $5 t$ for 
+the time $t$, and the joint forces for the maximal coordinate solver were provided the forces 
 obtained by simulating the system forward with the given control inputs. A non-zero control 
 input and reasonable estimate of the joint forces were necessary for the solver to converge.
 
@@ -614,7 +627,8 @@ solver. It took significantly more work to get a good trajectory in maximal coor
 The solver had a tendency to exploit the discretization and ``flip'' the elbow joint in 
 one time step, completely violating physical realistic behavior, which could only be 
 verified by carefully analyzing the output trajectory. This behavior could be mitigated by 
-penalizing the angular velocity of each body.
+penalizing the angular velocity of each body, but wasn't used in this example in order to 
+keep equivalent cost functions between the two solvers.
 
 \begin{figure}
     \centering
@@ -674,15 +688,15 @@ forces per time step. Similar to the acrobot, the arm was tasked to reach a cart
 in the world frame. The objective minimized distance of the end effector to the goal, as 
 well as penalizing the linear and angular velocities of each link. The midpoint velocities 
 were calculated using the poses at adjacent times steps using the same method described in 
-Section \label{sec:discrete_dynamics}. Gravity was not included in this problem since 
+Section \ref{sec:discrete_dynamics}. Gravity was not included in this problem since 
 including gravity made it extremely difficult to solve. Future work figuring out a good 
 heuristic to do cheap gravity compensation in maximal coordinates should make it easier to
-find good trajectory under gravity. 
+find good trajectories under gravity. 
 
-A summary of the solve is given in Table \label{tab:arm}. Ipopt produced a high-quality
-smooth trajectory (see control torques in Fig. \ref{fig:arm_torques}). While solver converged
-to a high-quality trajectory, it took about 45 seconds to generate, even for a very simple 
-a straghtforward point-to-point motion task. 
+A summary of the solve is given in Table \ref{tab:arm}. Ipopt produced a high-quality
+smooth trajectory (see control torques in Fig. \ref{fig:arm_torques}). While the solver converged
+to a high-quality trajectory, it took about 45 seconds to generate, even for this very simple 
+point-to-point motion task. 
 
 \begin{table}
     \centering 
@@ -705,14 +719,17 @@ off-the-shelf solver like Ipopt didn't work very well and doesn't seem to offer 
 advantage over a minimal coordinate representation. It took significant work tuning costs
 and providing good initial guesses for the solver to converge. Ipopt frequently got stuck 
 in the feasibility restoration phase and claimed infeasibility for some cost values or 
-varying initial conditions. While the per/iteration computation time for the acrobot was 
-suprisingly fast, it usually took many more iterations to converge than the minimal 
-coordinate solver. 
+varying initial conditions. While the per-iteration computation time for the acrobot was 
+suprisingly fast in maximal coordinates, it usually took many more iterations to converge 
+than the minimal coordinate solver. 
 
 Future work could explore writing a custom solver for these types of systems. Since 
 satisfying both the discrete Euler-Lagrange and joint constraints is relatively difficult,
 some sort of on- or near-manifold optimization method that takes steps that maintain 
-dynamic and/or kinematic feasibility between solver iterations could improve convergence.
+dynamic and/or kinematic feasibility between solver iterations could improve convergence. 
+A custom NLP solver would also have the advantage of dealing directly the group structure of
+quaternions by performing optimization entirely on the error state, rather than adding 
+norm constraints to the solver.
 
 
 \printbibliography
