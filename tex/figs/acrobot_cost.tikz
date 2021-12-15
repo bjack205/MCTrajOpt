@@ -1,5 +1,5 @@
 \begin{tikzpicture}
-\begin{axis}[xlabel={iterations}, ylabel={objective value}]
+\begin{axis}[xlabel={iterations}, ylabel={objective value}, ymode={log}]
     \addplot+[mark={none}, thick, cyan]
         table[row sep={\\}]
         {

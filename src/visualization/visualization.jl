@@ -48,6 +48,8 @@ function launchvis(body::DoublePendulum, x0; geom=nothing)
     setobject!(vis["body2"], geom2, MeshPhongMaterial(color=colorant"green"))
     setobject!(vis["body1"]["com"], Triad())
     setobject!(vis["body2"]["com"], Triad())
+    settransform!(vis["body1"]["com"], LinearMap(I*1/4))
+    settransform!(vis["body2"]["com"], LinearMap(I*1/4))
     let x = x0
         x1,x2 = MCTrajOpt.splitstate(body, x)
         ri,qi = SA[1,2,3], SA[4,5,6,7]
