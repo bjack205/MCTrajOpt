@@ -79,6 +79,20 @@ make the problem extremely difficult to solve. Only a few general-purpose off-th
 NLP solvers are commonly used or under active development 
 \cite{wachter_implementation_2006,gill_SNOPT_2005}.
 
+\begin{figure}[t]
+    \centering
+    \begin{subfigure}{0.48\columnwidth}
+        \includegraphics[width=\textwidth]{figs/arm_start.png} 
+    \end{subfigure}
+    \begin{subfigure}{0.48\columnwidth}
+        \includegraphics[width=\textwidth]{figs/arm_end.png} 
+    \end{subfigure}
+    \caption{Arm task of moving from an upright position to a goal location specified in 
+        cartesian coordinates. The state and control trajectory was found by solving a 
+        trajectory optimization problem in maximal coordinates using Ipopt.
+    }
+\end{figure}
+
 The purpose of this project is to demonstrate the performance of the well-known Ipopt solver
 when solving motion planning problems for systems with lots of sparsity in the dynamics. 
 In particular, this project focuses on implementing trajetory optimization in maximal 
@@ -382,7 +396,7 @@ The total wrench on any link $j$ is then given by the following expression:
     \sum_{i \in \mathcal{N}_2(j)} \xi_2\left(x^{(i)}, x^{(j)}, u_j\right)
 \end{equation}
 
-\subsection{Discrete Dynamics}
+\subsection{Discrete Dynamics} \label{sec:discrete_dynamics}
 
 The total kinetic energy of the system is 
 \begin{equation}
@@ -558,10 +572,14 @@ dynamics were discretized using implicit
 midpoint integration. All timing results were obtained on an Intel i7-1165G7 processor with
 16 GB of memory.
 
+The mass and inertia properties for the double pendulum (acrobot) and robot arm were 
+calculated assuming each link was a cylindrical body of aluminum of uniform density of 
+2.7 kg/$m^3$.
+
 \subsection{Acrobot}
 The acrobot problem is a canonical benchmark problem for generating motion plans for 
 underactuated systems. The acrobot is a double pendulum with actuation only at the ``elbow''
-joint. \todo{Add dynamic parameters}
+joint.
 
 In addtion to the dynamics constraints, both minimal and maximal coordinate solvers 
 constrained the end effector to be at the upright position:
@@ -572,9 +590,31 @@ where $p_\text{ee}$ is the location of the end effector in the last links's fram
 $r_\text{goal}$ is the location of the goal in the world frame.
 For minimal coordinates, $r_N^{(M)}$ and $q_N^{(M)}$ were calculated using forward 
 kinematics using \texttt{RigidBodyDynamics.jl}. The objectives for both solvers only 
-penalized distance of the end effector to the goal for all time steps, and some small 
+penalized distance of the end effector to the goal for all time steps, and some 
 regularization on the control values. Both solvers were initialized with identical 
-initial guesses 
+initial guess, which provided the initial state for all states, a control of $5 t$ for 
+the time $t$. The joint forces for the maximal coordinate solver were provided the forces 
+obtained by simulating the system forward with the given control inputs. A non-zero control 
+input and reasonable estimate of the joint forces were necessary for the solver to converge.
+
+The joint forces from both solvers are shown in Fig. \ref{fig:acrobot_torques}, and the 
+objective and constraint violations are shown in Figs. \ref{fig:acrobot_cost} and 
+\ref{fig:acrobot_viol}. The end-effector trajectories are shown in Fig. 
+\ref{fig:acrobot_endeffector}. In summary, the maximal coordinate solver found a trajectory 
+with much lower control torques and therefore got a lower cost. As summarized in Table 
+\ref{tab:acrobot}, despite the fact the maximal coordinate trajetory problem is significantly
+larger, it's cost per iteration is almost half that of minimal coordinates in this 
+preliminary implementation. This is likely due to the fact that evaluating the dynamics Jacobian
+in maximal coordinates is extremely simple (not to mention extremely parallelizable) in 
+maximal coordinates, whereas minimal coordinates require inverting the mass matrix to solve 
+for the accelerations. 
+
+Overall, the maximal coordinate solver was much more brittle than the minimal coordinate 
+solver. It took significantly more work to get a good trajectory in maximal coordinates. 
+The solver had a tendency to exploit the discretization and ``flip'' the elbow joint in 
+one time step, completely violating physical realistic behavior, which could only be 
+verified by carefully analyzing the output trajectory. This behavior could be mitigated by 
+penalizing the angular velocity of each body.
 
 \begin{figure}
     \centering
@@ -606,6 +646,7 @@ initial guesses
         \caption{Maximal Coordinates}
         \label{fig:acrobot_eemax}
     \end{subfigure}
+    \label{fig:acrobot_endeffector}
     \caption{End-effector location for acrobot for (a) minimal 
         coordinates, and (b) maximal coordinates. Mark color 
         corresponds to time, with blue being zero seconds and red being the final time.
@@ -622,13 +663,57 @@ initial guesses
         ``Jac density'' is the number of nonzero elements in the constraint Jacobian 
         divided by its total size.
     }
+    \label{tab:acrobot}
 \end{table}
 
 
 \subsection{6 DOF Arm}
-Give results for the arm, with and without gravity. 
+A simple 6 degree-of-freedom serial-link manipulator was modeled with simlar geometry to the
+Kuka iiwa arm. In maximal coordinates, this model has 42 states, 6 controls, and 30 joint 
+forces per time step. Similar to the acrobot, the arm was tasked to reach a cartesian point
+in the world frame. The objective minimized distance of the end effector to the goal, as 
+well as penalizing the linear and angular velocities of each link. The midpoint velocities 
+were calculated using the poses at adjacent times steps using the same method described in 
+Section \label{sec:discrete_dynamics}. Gravity was not included in this problem since 
+including gravity made it extremely difficult to solve. Future work figuring out a good 
+heuristic to do cheap gravity compensation in maximal coordinates should make it easier to
+find good trajectory under gravity. 
+
+A summary of the solve is given in Table \label{tab:arm}. Ipopt produced a high-quality
+smooth trajectory (see control torques in Fig. \ref{fig:arm_torques}). While solver converged
+to a high-quality trajectory, it took about 45 seconds to generate, even for a very simple 
+a straghtforward point-to-point motion task. 
+
+\begin{table}
+    \centering 
+    \caption{Summary of Solve for 6DOF Arm}
+    \input{figs/arm_data.tex}
+    \label{tab:arm}
+\end{table}
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.95\columnwidth,height=5cm]{figs/arm_torques.tikz}
+    \caption{Joint torques for the 6 degree-of-freedom arm.}
+    \label{fig:arm_torques}
+\end{figure}
 
 \section{Conclusion}
+This project explored using maximal coordinates to solve trajectory optimization problems.
+Although maximal coordinates have some very attractive properties, using them in an 
+off-the-shelf solver like Ipopt didn't work very well and doesn't seem to offer any sort of 
+advantage over a minimal coordinate representation. It took significant work tuning costs
+and providing good initial guesses for the solver to converge. Ipopt frequently got stuck 
+in the feasibility restoration phase and claimed infeasibility for some cost values or 
+varying initial conditions. While the per/iteration computation time for the acrobot was 
+suprisingly fast, it usually took many more iterations to converge than the minimal 
+coordinate solver. 
+
+Future work could explore writing a custom solver for these types of systems. Since 
+satisfying both the discrete Euler-Lagrange and joint constraints is relatively difficult,
+some sort of on- or near-manifold optimization method that takes steps that maintain 
+dynamic and/or kinematic feasibility between solver iterations could improve convergence.
+
 
 \printbibliography
 

@@ -246,10 +246,10 @@ latex_tabular(joinpath(tikzdir, "acrobot_data.tex"),
         ["Iters", data_min["iter"][end], data_max["iter"][end]],
         ["Cost", round(data_min["objective"][end]), round(data_max["objective"][end])],
         ["Run time (s)", round(tsolve_min, digits=2), round(tsolve_max, digits=2)], 
+        ["Time/iter (ms)", round(tsolve_min/data_min["iter"][end]*1000), round(tsolve_max/data_min["iter"][end]*1000)],
         Rule(:bottom)
     ]
 )
-
 
 ## Test Jacobian
 ztest = MC.randtraj(prob)

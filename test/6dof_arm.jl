@@ -150,6 +150,7 @@ jacnnz = length(MOI.jacobian_structure(prob))
 jacdensity = MC.getjacobiandensity(prob)
 
 using LaTeXTabulars
+using PGFPlotsX
 tikzdir = joinpath(dirname(pathof(MCTrajOpt)), "..", "tex", "figs")
 topercent(x) = string(round(x*100, digits=1)) * raw"\%"
 latex_tabular(joinpath(tikzdir, "arm_data.tex"),
@@ -165,11 +166,22 @@ latex_tabular(joinpath(tikzdir, "arm_data.tex"),
         ["Iters", data["iter"][end]],
         ["Cost", round(data["objective"][end])],
         ["Run time (s)", round(tsolve, digits=2)], 
+        ["Time/iter (ms)", round(tsolve/data["iter"][end]*1000)],
         Rule(:bottom)
     ]
 )
 
-plot(data["iter"], data["objective"])
-plot(data["iter"], data["inf_pr"], yscale=:log10)
-
-plot(Usol)
+torqueplots = map(1:6) do j
+    @pgf PlotInc({ mark="none", "thick", "solid" }, Table(x=opt.thist[1:end-1], y=[u[j] for u in Usol]))
+end;
+p_torques = @pgf TikzPicture(
+    Axis({
+        xlabel="time (s)",
+        ylabel="control torque " * L"(N \cdot m)",
+        "legend style"="{at={(0.93,0.03)},anchor=south east}",
+    },
+        torqueplots...,
+        Legend(["u$j" for j = 1:6])
+    )
+)
+pgfsave(joinpath(tikzdir,"arm_torques.tikz"), p_torques, include_preamble=false)
