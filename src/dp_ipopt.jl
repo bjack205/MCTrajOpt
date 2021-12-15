@@ -86,6 +86,11 @@ function DoublePendulumMOI(model::DoublePendulum, params::SimParams,
     prob
 end
 
+function getjacobiandensity(prob::DoublePendulumMOI)
+    nnz = length(MOI.jacobian_structure(prob))
+    return nnz / (prob.n_nlp * prob.m_nlp)
+end
+
 function initialize_sparsity!(prob::DoublePendulumMOI)
     rinds, qinds = prob.rinds, prob.qinds
     uinds, λinds = prob.uinds, prob.λinds
@@ -121,7 +126,7 @@ function MOI.eval_objective(prob::DoublePendulumMOI, z)
         else
             xk = z[xinds[k]]
             xref = prob.Xref[k]
-        for j = 1:prob.L
+        for j = 2:prob.L
             r = gettran(model, xk, j)
             q = getquat(model, xk, j)
             e = r + Amat(q)*prob.p_ee - prob.rgoal
@@ -149,11 +154,21 @@ function MOI.eval_objective_gradient(prob::DoublePendulumMOI, grad_f, x)
     return
 end
 
-function getendeffectorposition(prob::DoublePendulumMOI, theta)
-    state = prob.state[eltype(theta)]
-    RBD.set_configuration!(state, theta)
-    elbow = RBD.findjoint(state.mechanism, "elbow") 
-    p_ee = RBD.transform(state, RBD.Point3D(RBD.frame_after(elbow), prob.p_ee), RBD.root_frame(state.mechanism))
+function getendeffectorposition(prob::DoublePendulumMOI{Nx}, x) where Nx
+    if ismincoord(prob)
+        if length(x) == 4
+            theta = x[SA[1,2]]
+        else
+            theta = x
+        end
+        state = prob.state[eltype(theta)]
+        RBD.set_configuration!(state, theta)
+        elbow = RBD.findjoint(state.mechanism, "elbow") 
+        p_ee = RBD.transform(state, RBD.Point3D(RBD.frame_after(elbow), prob.p_ee), RBD.root_frame(state.mechanism))
+    else
+        rf, qf = x[prob.rinds[1,end]], x[prob.qinds[1,end]]
+        return rf + Amat(qf)*prob.p_ee
+    end
     return p_ee.v
 end
 

@@ -20,7 +20,7 @@ export TwoBody, RevoluteJoint, SpaceBar, DoublePendulum
 export packZ!, randstate, visualize!, launchvis
 
 
-
+include("ipopt_helpers.jl")
 include("sparse.jl")
 include("joints.jl")
 include("rotations.jl")

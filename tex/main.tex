@@ -554,6 +554,53 @@ Provide details of how to penalize velocity.
 Problem formulation for optimizing over momentum values.
 
 \section{Results}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\columnwidth,height=5cm]{figs/acrobot_torques.tikz}
+    \caption{Control torques for the acrobot elbow joint.}
+    \label{fig:acrobot_torques}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\columnwidth,height=5cm]{figs/acrobot_cost.tikz}
+    \caption{Objective value for acrobot.}
+    \label{fig:acrobot_cost}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\columnwidth,height=5cm]{figs/acrobot_viol.tikz}
+    \caption{Constraint violations for acrobot.}
+    \label{fig:acrobot_viol}
+\end{figure}
+\begin{figure}
+    \centering
+    \begin{subfigure}{0.9\columnwidth}
+        \includegraphics[width=\textwidth,height=5cm]{figs/acrobot_eemin.tikz}
+        \caption{Minimal Coordinates}
+        \label{fig:acrobot_eemin}
+    \end{subfigure}
+    \begin{subfigure}{0.9\columnwidth}
+        \includegraphics[width=\textwidth,height=5cm]{figs/acrobot_eemax.tikz}
+        \caption{Maximal Coordinates}
+        \label{fig:acrobot_eemax}
+    \end{subfigure}
+    \caption{End-effector location for acrobot for (a) minimal 
+        coordinates, and (b) maximal coordinates. Mark color 
+        corresponds to time, with blue being zero seconds and red being the final time.
+    }
+\end{figure}
+
+\begin{table}
+    \centering 
+    \caption{Min/Max Comparison for Acrobot}
+    \input{figs/acrobot_data.tex}
+    \caption*{ \small
+        Constraints do not include simple bounds (the initial condition), ``nnz(jac)'' 
+        is shorthand for the number of nonzero elements in the constraint Jacobian, and 
+        ``Jac density'' is the number of nonzero elements in the constraint Jacobian 
+        divided by its total size.
+    }
+\end{table}
 
 
 \subsection{Double Pendulum}
